@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-label="Agentic Bidding Room — agents that pay for what they don't know">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#080B14"/>
+      <stop offset="55%" stop-color="#0D1424"/>
+      <stop offset="100%" stop-color="#0A1A1F"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="55%" stop-color="#7DF9E4"/>
+      <stop offset="100%" stop-color="#2DE2C5"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2DE2C5" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#2DE2C5" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#2DE2C5" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#2DE2C5" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <style>
+      .pulse { animation: pulse 2.4s ease-in-out infinite; }
+      @keyframes pulse { 0%,100% { opacity:.35 } 50% { opacity:1 } }
+      .drift { animation: drift 3.6s ease-in-out infinite; }
+      @keyframes drift { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+    </style>
+  </defs>
+
+  <rect width="1200" height="340" rx="16" fill="url(#bg)"/>
+  <rect width="1200" height="340" rx="16" fill="url(#grid)"/>
+  <ellipse cx="980" cy="90" rx="200" ry="120" fill="#2DE2C5" opacity="0.10" filter="url(#soft)"/>
+  <ellipse cx="250" cy="300" rx="180" ry="90" fill="#F2B14C" opacity="0.07" filter="url(#soft)"/>
+
+  <!-- eyebrow -->
+  <text x="72" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" letter-spacing="4" fill="#2DE2C5" opacity="0.9">
+    x402 · ALGORAND TESTNET · PREHACK 2026
+  </text>
+
+  <!-- title -->
+  <text x="70" y="164" font-family="ui-sans-serif, -apple-system, Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="64" font-weight="800" letter-spacing="-1.5" fill="url(#title)">
+    Agentic Bidding Room
+  </text>
+
+  <!-- underline glow -->
+  <rect x="72" y="182" width="430" height="2" fill="url(#glow)" class="pulse"/>
+
+  <!-- tagline -->
+  <text x="72" y="226" font-family="ui-sans-serif, -apple-system, Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="22" fill="#C7D2DC">
+    Agents that <tspan fill="#F2B14C" font-weight="600">pay real money</tspan> for what they don't know.
+  </text>
+
+  <!-- chips -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#9FB3C8">
+    <rect x="72" y="256" width="176" height="34" rx="17" fill="#0F1B2E" stroke="#2DE2C5" stroke-opacity="0.35"/>
+    <text x="94" y="278" fill="#7DF9E4">HTTP 402 · settled</text>
+
+    <rect x="262" y="256" width="196" height="34" rx="17" fill="#0F1B2E" stroke="#2DE2C5" stroke-opacity="0.22"/>
+    <text x="284" y="278">sealed bid · escrow</text>
+
+    <rect x="472" y="256" width="212" height="34" rx="17" fill="#0F1B2E" stroke="#2DE2C5" stroke-opacity="0.22"/>
+    <text x="494" y="278">closest guess · wins</text>
+  </g>
+
+  <!-- right-hand motif: the 402 moment -->
+  <!-- positioning and animation MUST stay on separate groups: a CSS `transform`
+       on an element overrides its `transform` presentation attribute, which
+       would snap the card back to the origin at the animation's 0% keyframe. -->
+  <g transform="translate(830,74)">
+  <g class="drift">
+    <rect x="0" y="0" width="290" height="192" rx="14" fill="#0B1524" stroke="#1E3A4C" stroke-width="1.5"/>
+    <circle cx="24" cy="24" r="5" fill="#FF6B6B" opacity="0.8"/>
+    <circle cx="42" cy="24" r="5" fill="#F2B14C" opacity="0.8"/>
+    <circle cx="60" cy="24" r="5" fill="#2DE2C5" opacity="0.8"/>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+      <text x="24" y="72" fill="#5A7189">GET /product/hint</text>
+      <text x="24" y="100" fill="#F2B14C" class="pulse">← 402 Payment Required</text>
+      <text x="24" y="128" fill="#5A7189">signing…</text>
+      <text x="24" y="156" fill="#2DE2C5">→ 200 OK  condition: mint</text>
+    </g>
+  </g>
+  </g>
+</svg>
