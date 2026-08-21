@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx --env-file=../.env src/test-payment.ts",
     "keygen": "tsx src/keygen.ts",
+    "optin": "tsx --env-file=../.env src/optin.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

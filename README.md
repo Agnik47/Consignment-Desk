@@ -320,7 +320,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | Phase | What | Status |
 |---|---|:--|
 | **0** | Repo audit — real package APIs verified against shipped types | ✅ **Done** |
-| **1** | Smallest real x402 payment — `402` gate live vs. real facilitator | 🟡 **Gate verified, settlement pending funding** |
+| **1** | Smallest real x402 payment — `402` gate + real settlement on testnet | ✅ **Done — settled tx verified on-chain** |
 | **2** | Wallet provisioning — session-bound testnet keypairs | ⬜ Not started |
 | **3** | Room + product state machine | ⬜ Not started |
 | **4** | x402-gated room entry | ⬜ Not started |
@@ -330,9 +330,12 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **8** | Full E2E harness (`npm run test:e2e`) | ⬜ Not started |
 | **9** | Room UI + reveal view | ⬜ Not started |
 
-**What is genuinely proven right now:** the API returns a real, well-formed `402` with a correct `PAYMENT-REQUIRED` header — verified live against `facilitator.goplausible.xyz`, with the right network, amount (`10000` micro-units = $0.01), asset (`10458941`) and `payTo`. Both services typecheck clean against the real `@x402/*` v2.23.0 types.
+**What is genuinely proven right now:** a real agent-initiated x402 payment has settled on Algorand testnet, end to end — `402` → signed payment → facilitator verify/settle → `200`. Independently cross-checked against the public indexer (not just trusted from the client script): confirmed round, correct USDC transfer amount, and a `fee: 0` on the payer's transaction — empirically confirming the facilitator sponsors the fee-payer leg.
 
-**What is not yet proven:** an actual settled payment. That needs funded testnet accounts, which needs an interactive dispenser login. Until that runs green, **treat every claim about settlement in this README as design intent, not demonstrated fact.**
+> **[View the settled transaction on Lora →](https://lora.algokit.io/testnet/transaction/SWUJKNFNLMUSZ3PDII2QIXNKFAW5PSZC3RDR6HIGX5VSL53KEJYQ)**
+> `10000` units of USDC (`$0.01`), agent → resource server, note `x402-payment-v2-…` — real protocol traffic, not a mock.
+
+Both services typecheck clean against the real `@x402/*` v2.23.0 types. This is P0-3 from the PRD — the requirement flagged as "never cut, above all else" — and it's real.
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
