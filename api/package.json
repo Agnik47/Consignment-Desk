@@ -1,0 +1,23 @@
+{
+  "name": "api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../.env src/index.ts",
+    "start": "tsx --env-file=../.env src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "~2.1.1",
+    "@x402/avm": "~2.23.0",
+    "@x402/core": "~2.23.0",
+    "@x402/hono": "~2.23.0",
+    "hono": "~4.13.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "~4.23.12",
+    "typescript": "^5.7.3"
+  }
+}

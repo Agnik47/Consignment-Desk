@@ -1,0 +1,14 @@
+{
+  "name": "agentic-bidding-room",
+  "private": true,
+  "version": "0.0.0",
+  "description": "x402 Global Challenge PreHack — Agentic Bidding Room",
+  "workspaces": [
+    "api",
+    "agent"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace api",
+    "dev:agent": "npm run start --workspace agent"
+  }
+}
