@@ -4,6 +4,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { paymentMiddleware } from "@x402/hono";
 import { resourceServer, routes } from "./x402.js";
 import { createSession, getSession } from "./sessions.js";
+import { ROOM_ID, getPublicView } from "./rooms.js";
 
 const app = new Hono();
 
@@ -35,6 +36,14 @@ app.post("/api/session", async (c) => {
     console.error("[session] funding failed:", err instanceof Error ? err.message : "unknown error");
     return c.json({ error: "SESSION_FUNDING_FAILED", message: "Could not fund a new wallet. Please try again." }, 500);
   }
+});
+
+app.get("/api/room/:id", (c) => {
+  const id = c.req.param("id");
+  if (id !== ROOM_ID) {
+    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}". This MVP serves a single room: "${ROOM_ID}".` }, 404);
+  }
+  return c.json(getPublicView());
 });
 
 const port = Number(process.env.API_PORT ?? 4021);

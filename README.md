@@ -221,7 +221,7 @@ agentic-bidding-room/
 │       ├── x402.ts         #   middleware config + routes table
 │       ├── chain.ts        #   algosdk wrappers — keygen, atomic funding
 │       ├── sessions.ts     #   in-memory session store
-│       ├── rooms.ts        #   in-memory room state          (planned)
+│       ├── rooms.ts        #   room/product state machine + commit-reveal
 │       └── sockets.ts      #   live agent status             (planned)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
@@ -324,7 +324,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **0** | Repo audit — real package APIs verified against shipped types | ✅ **Done** |
 | **1** | Smallest real x402 payment — `402` gate + real settlement on testnet | ✅ **Done — settled tx verified on-chain** |
 | **2** | Wallet provisioning — session-bound testnet keypairs | ✅ **Done — funding verified on-chain** |
-| **3** | Room + product state machine | ⬜ Not started |
+| **3** | Room + product state machine | ✅ **Done — verified live via `GET /api/room/:id`** |
 | **4** | x402-gated room entry | ⬜ Not started |
 | **5** | Agent workers — 3 personas, heuristic brain | ⬜ Not started |
 | **6** | Sealed-bid escrow contract | ⬜ Not started |
@@ -340,6 +340,8 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 Both services typecheck clean against the real `@x402/*` v2.23.0 types. This is P0-3 from the PRD — the requirement flagged as "never cut, above all else" — and it's real.
 
 **Also real:** `POST /api/session` mints a fresh testnet wallet, funds it with ALGO + USDC in one atomic transaction group, and never returns or logs the private key — verified against real on-chain balances, not mocked (`AGENTS.md` Rule 2 bans mocking this layer, and the integration test caught a real `overspend` error mid-build when the first funding-amount guess was too generous for the dispenser). One honest gap: funding measures **5–6s**, not the PRD's narrow "within 3 seconds" bullet — a real constraint of Algorand's ~3s block time, not a bug, and one that still fits comfortably inside the PRD's actual judged metric for the whole QR-to-agent-assigned flow (<20s). Detail in [`docs/implementation-notes.md` §8](docs/implementation-notes.md).
+
+**Also real:** `GET /api/room/:id` serves the room/product state machine (`CREATED → OPEN → BIDDING_CLOSED → REVEALING → SETTLED`, guarded — invalid transitions throw) with a working commit-reveal scheme for the hidden target. Checked structurally, not just "the code doesn't return it": the hidden target, its nonce, and the paid hint are verifiably absent from the public response, while the commitment hash *is* shown (that's the point of committing before bidding opens). Detail in [`docs/implementation-notes.md` §9](docs/implementation-notes.md).
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
