@@ -1,0 +1,8 @@
+# NOTE: opencv is intentionally NOT listed here. This Jetson already has it
+# installed twice over (JetPack's apt python3-opencv, and a pip opencv-python /
+# opencv-python-headless pair in ~/.local that shadows it on sys.path). Adding
+# another opencv-python entry would just reinstall the same shadow. If you use
+# a virtualenv, create it with --system-site-packages so cv2 stays visible;
+# see TESTING.md.
+supabase>=2.0.0
+python-dotenv>=1.0.0
