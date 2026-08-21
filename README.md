@@ -219,13 +219,15 @@ agentic-bidding-room/
 ├── api/                    # Hono + @x402/hono — the gated endpoints
 │   └── src/
 │       ├── x402.ts         #   middleware config + routes table
+│       ├── chain.ts        #   algosdk wrappers — keygen, atomic funding
+│       ├── sessions.ts     #   in-memory session store
 │       ├── rooms.ts        #   in-memory room state          (planned)
-│       ├── chain.ts        #   algosdk wrappers              (planned)
 │       └── sockets.ts      #   live agent status             (planned)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
 │       ├── test-payment.ts #   Phase 1 hard-gate E2E check
 │       ├── keygen.ts       #   testnet keypair utility
+│       ├── optin.ts        #   ASA opt-in utility
 │       ├── brain.ts        #   decide → maybe buy hint → bid (planned)
 │       └── client.ts       #   x402 client + signer          (planned)
 ├── contracts/              # Algorand Python — sealed-bid escrow (planned)
@@ -321,7 +323,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 |---|---|:--|
 | **0** | Repo audit — real package APIs verified against shipped types | ✅ **Done** |
 | **1** | Smallest real x402 payment — `402` gate + real settlement on testnet | ✅ **Done — settled tx verified on-chain** |
-| **2** | Wallet provisioning — session-bound testnet keypairs | ⬜ Not started |
+| **2** | Wallet provisioning — session-bound testnet keypairs | ✅ **Done — funding verified on-chain** |
 | **3** | Room + product state machine | ⬜ Not started |
 | **4** | x402-gated room entry | ⬜ Not started |
 | **5** | Agent workers — 3 personas, heuristic brain | ⬜ Not started |
@@ -336,6 +338,8 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 > `10000` units of USDC (`$0.01`), agent → resource server, note `x402-payment-v2-…` — real protocol traffic, not a mock.
 
 Both services typecheck clean against the real `@x402/*` v2.23.0 types. This is P0-3 from the PRD — the requirement flagged as "never cut, above all else" — and it's real.
+
+**Also real:** `POST /api/session` mints a fresh testnet wallet, funds it with ALGO + USDC in one atomic transaction group, and never returns or logs the private key — verified against real on-chain balances, not mocked (`AGENTS.md` Rule 2 bans mocking this layer, and the integration test caught a real `overspend` error mid-build when the first funding-amount guess was too generous for the dispenser). One honest gap: funding measures **5–6s**, not the PRD's narrow "within 3 seconds" bullet — a real constraint of Algorand's ~3s block time, not a bug, and one that still fits comfortably inside the PRD's actual judged metric for the whole QR-to-agent-assigned flow (<20s). Detail in [`docs/implementation-notes.md` §8](docs/implementation-notes.md).
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
