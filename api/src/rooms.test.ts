@@ -46,8 +46,14 @@ describe("public view never leaks the secret", () => {
     expect(view.product).not.toHaveProperty("hiddenTarget");
     expect(view.product).not.toHaveProperty("targetNonce");
     expect(view.product).not.toHaveProperty("hint");
+    // The 64-hex-char nonce is checked as a substring too: collision odds
+    // against the (legitimately public) commitment hash are negligible.
+    // hiddenTarget is a short number (e.g. "29") and is NOT checked this way
+    // — it can coincidentally appear as a substring of that same hash
+    // (caught exactly this: a run with commitment "...d29c44..." false-failed
+    // on hiddenTarget=29). The toHaveProperty checks above are the real,
+    // reliable guarantee for that field.
     expect(serialized).not.toContain(product.targetNonce);
-    expect(serialized).not.toContain(String(product.hiddenTarget));
   });
 
   it("still surfaces the commitment publicly — that's the point of committing", () => {

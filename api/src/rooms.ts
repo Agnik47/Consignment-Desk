@@ -40,8 +40,20 @@ export interface PublicRoom {
   product: PublicProduct;
 }
 
+export interface Participant {
+  sessionId: string;
+  address: string;
+  agentId: string;
+  enteredAt: number;
+  entryTxId: string;
+}
+
 export const ROOM_ID = "demo-room";
 export const PRODUCT_ID = "demo-product";
+
+// Not specified anywhere how long the room stays open for entries before
+// bidding closes — placeholder for the demo-mode config Phase 11 will own.
+export const DEFAULT_BIDDING_WINDOW_MS = 5 * 60 * 1000;
 
 /** commitment = SHA-256(target || nonce), serialized with an explicit delimiter to avoid any concatenation ambiguity. */
 export function createCommitment(target: number, nonce: string): string {
@@ -85,6 +97,7 @@ let room: Room = {
   deadline: null,
   createdAt: Date.now(),
 };
+const participants = new Map<string, Participant>();
 
 function transition(next: RoomStatus): void {
   if (!VALID_TRANSITIONS[room.status].includes(next)) {
@@ -140,8 +153,40 @@ export function settleRoom(): Room {
   return room;
 }
 
+/**
+ * Room entry has no separate "start the room" trigger anywhere in the spec —
+ * the first entry attempt opens the room (CREATED -> OPEN, deadline set from
+ * this moment). Later entries just require the room to still be OPEN. Throws
+ * with a clear reason once bidding has moved past OPEN, so a caller never
+ * accidentally charges someone for a room that can't accept them.
+ */
+export function ensureOpenForEntry(biddingWindowMs = DEFAULT_BIDDING_WINDOW_MS): Room {
+  if (room.status === "CREATED") {
+    return openRoom(biddingWindowMs);
+  }
+  if (room.status !== "OPEN") {
+    throw new Error(`Room is not accepting entries (status: ${room.status})`);
+  }
+  return room;
+}
+
+export function hasEntered(sessionId: string): boolean {
+  return participants.has(sessionId);
+}
+
+export function getParticipant(sessionId: string): Participant | undefined {
+  return participants.get(sessionId);
+}
+
+export function recordEntry(sessionId: string, address: string, agentId: string, entryTxId: string): Participant {
+  const participant: Participant = { sessionId, address, agentId, enteredAt: Date.now(), entryTxId };
+  participants.set(sessionId, participant);
+  return participant;
+}
+
 /** Test-only: resets the singleton room/product to a fresh CREATED state. */
 export function resetForTests(): void {
   product = seedProduct();
   room = { roomId: ROOM_ID, productId: PRODUCT_ID, status: "CREATED", startTime: null, deadline: null, createdAt: Date.now() };
+  participants.clear();
 }

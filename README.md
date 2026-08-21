@@ -222,6 +222,7 @@ agentic-bidding-room/
 │       ├── chain.ts        #   algosdk wrappers — keygen, atomic funding
 │       ├── sessions.ts     #   in-memory session store
 │       ├── rooms.ts        #   room/product state machine + commit-reveal
+│       ├── entry.ts        #   pays room entry on a session's behalf
 │       └── sockets.ts      #   live agent status             (planned)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
@@ -325,7 +326,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **1** | Smallest real x402 payment — `402` gate + real settlement on testnet | ✅ **Done — settled tx verified on-chain** |
 | **2** | Wallet provisioning — session-bound testnet keypairs | ✅ **Done — funding verified on-chain** |
 | **3** | Room + product state machine | ✅ **Done — verified live via `GET /api/room/:id`** |
-| **4** | x402-gated room entry | ⬜ Not started |
+| **4** | x402-gated room entry | ✅ **Done — real payment settled, race condition tested live** |
 | **5** | Agent workers — 3 personas, heuristic brain | ⬜ Not started |
 | **6** | Sealed-bid escrow contract | ⬜ Not started |
 | **7** | Agent → contract integration | ⬜ Not started |
@@ -342,6 +343,8 @@ Both services typecheck clean against the real `@x402/*` v2.23.0 types. This is 
 **Also real:** `POST /api/session` mints a fresh testnet wallet, funds it with ALGO + USDC in one atomic transaction group, and never returns or logs the private key — verified against real on-chain balances, not mocked (`AGENTS.md` Rule 2 bans mocking this layer, and the integration test caught a real `overspend` error mid-build when the first funding-amount guess was too generous for the dispenser). One honest gap: funding measures **5–6s**, not the PRD's narrow "within 3 seconds" bullet — a real constraint of Algorand's ~3s block time, not a bug, and one that still fits comfortably inside the PRD's actual judged metric for the whole QR-to-agent-assigned flow (<20s). Detail in [`docs/implementation-notes.md` §8](docs/implementation-notes.md).
 
 **Also real:** `GET /api/room/:id` serves the room/product state machine (`CREATED → OPEN → BIDDING_CLOSED → REVEALING → SETTLED`, guarded — invalid transitions throw) with a working commit-reveal scheme for the hidden target. Checked structurally, not just "the code doesn't return it": the hidden target, its nonce, and the paid hint are verifiably absent from the public response, while the commitment hash *is* shown (that's the point of committing before bidding opens). Detail in [`docs/implementation-notes.md` §9](docs/implementation-notes.md).
+
+**Also real:** room entry — `POST /api/room/demo-room/enter` is genuinely x402-gated (curl it unpaid, get a real `402` for `$0.50`); `POST /api/session/enter` is the browser-facing action that pays it server-side using the session's own custodial key, via a real loopback HTTP call reusing the exact 402→sign→retry pattern Phase 1 proved. First entry auto-opens the room. A double-click race was tested for real — fired two simultaneous requests at a fresh session, got one real settled `200` and one clean `409`, not a double charge. Detail in [`docs/implementation-notes.md` §10](docs/implementation-notes.md).
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
