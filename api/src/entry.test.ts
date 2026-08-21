@@ -7,6 +7,7 @@ vi.mock("./sessions.js", () => ({
 
 vi.mock("./rooms.js", () => ({
   ROOM_ID: "demo-room",
+  PRODUCT_ID: "demo-product",
   ensureOpenForEntry: vi.fn(),
   hasEntered: vi.fn(() => false),
   getParticipant: vi.fn(() => undefined),

@@ -216,3 +216,66 @@ Chose the real network loopback over an in-process shortcut deliberately: it reu
 **A real bug caught in my own test, not the product code:** an early version of `rooms.test.ts`'s "no leak" test asserted the serialized public view never contains the string `"29"` (the hidden target). It failed intermittently — not because the target leaked, but because `"29"` is short enough to occasionally appear as a coincidental substring of the (legitimately public) commitment hash, e.g. `...d29c44...`. Confirmed by running the suite three times after removing that specific assertion (kept the structural `toHaveProperty` checks, which are the real, reliable guarantee, and the 64-char nonce substring check, whose collision odds are actually negligible). Worth a comment in the test itself so nobody "fixes" it back to the flaky version.
 
 **Tests:** `api/src/entry.test.ts` (3 cases, unit-level, no network) covers every early-exit path that doesn't touch the x402/algod machinery — unknown session, idempotent reuse, room-not-open — mocking `sessions.ts`/`rooms.ts` per Rule 2 (mocks only for isolated unit tests). `api/src/entry.integration.test.ts` (real testnet, ~11s, requires the dev server already running since it exercises the same loopback a real request would) covers the full paid path plus idempotent re-entry, end to end.
+
+---
+
+## 11. Phase 5 — Agent Client findings (22 Aug 2026)
+
+**This is P0-3 — the requirement the PRD flags as never-cut.** `GET /api/product/demo-product/hint` is x402-gated at `$0.05`, and an agent pays for it *itself*, mid-decision, with no human in the path.
+
+### What landed
+
+- **`agent/src/brain.ts`** — the valuation logic. Pure and deterministic: no I/O, no clock, no randomness, no dependencies. Exports personas, `confidence()`, `estimate()`, `shouldBuyHint()`, `personaForAgentNumber()`.
+- **`api/src/agents.ts`** — the worker: `analyzing → buying_hint (conditional) → thinking → bid_submitted`, with a `failed` status carrying a reason rather than letting an agent silently vanish.
+- **`api/src/bids.ts`** — one bid per agent, deadline-enforced.
+- **`api/src/x402client.ts`** — the 402→sign→retry client mechanics, extracted from `entry.ts` because the hint purchase became a genuine second caller (not speculative dedup — two real callers, non-trivial shared logic).
+
+### Deviation from AGENTS.md §3, stated not hidden
+
+The documented layout implies agents are separate processes. They run as **in-process workers** instead: §4 requires wallets stay server-managed and a session's signing key never leave this process, so a separate process would need either an IPC key bridge or its own unrelated wallet — and §4 explicitly warns against the latter. `tech-stack.md`'s own wording ("one process/**worker** per persona… no IPC bridge") supports this reading. The pure brain still lives at `agent/src/brain.ts` as documented, imported by relative path so it stays independently testable and reusable (PRD P2-3's "third-party agents slot in" seam).
+
+### The heuristic, and why its numbers are what they are
+
+`estimate = baseValue + category + era + packaging + condition`, then scaled by a persona bias. `condition` contributes **0 until a hint reveals it** — that's the entire mechanism by which paying for information changes the number. Confidence is a weighted count of known value-drivers, with `condition` weighted highest (0.45) precisely because it's the unknown the hint sells.
+
+The demo outcome, computed before any code was written and then confirmed live:
+
+| agent | persona | buys hint? | bid | distance from $29 | distance had it *not* bought |
+|---|---|---|---|---|---|
+| agent-1 | conservative | no | 24.38 | 4.62 | — |
+| agent-2 | balanced | **yes** | 28.70 | **0.30** ← winner | 2.50 |
+| agent-3 | aggressive | **yes** | 29.85 | 0.85 | 1.44 |
+
+Both information-buyers beat the non-buyer, the winner bought information, and each buyer would have done *worse* without it — that's PRD G4 ("the agent's spending decision visibly changes the outcome") holding, not asserted. `agent/src/brain.test.ts` locks all four of those properties as tests, so a future heuristic tweak that breaks the story fails loudly here instead of on stage.
+
+**Honesty (AGENTS.md Rule 5):** this is a scoring function, not an LLM, and the tuning above is deliberate. That is not cheating — AGENTS.md Phase 11 *requires* determinism ("randomness must not decide whether the demo succeeds"). Say on stage that the valuation is a documented heuristic and that the autonomous part worth watching is the **payment decision**, not the arithmetic.
+
+**The agent's budget is real, not nominal.** `shouldBuyHint` is fed the agent's actual on-chain USDC balance (`chain.getUsdcBalance`), so an agent that genuinely can't afford a hint declines for a real reason.
+
+### Verified live, with independent on-chain evidence
+
+Full three-agent cast run end to end against testnet:
+- `agent-1` (conservative) declined the hint, finished in **1s** — no payment at all.
+- `agent-2` and `agent-3` each **autonomously bought a hint**, confidence jumping `0.47 → 0.92`, each taking ~5s (real settlement time).
+- Both hint purchases cross-checked on the public indexer, independent of our own app's report: `50000` micro-USDC (`$0.05`) each, asset `10458941`, **sender = each agent's own wallet address**, `fee: 0` (facilitator-sponsored, consistent with Phases 1/4), note `x402-payment-v2-…`. Rounds 66536561 and 66536563.
+- Structured logs match AGENTS.md §10's requested shape exactly (`[agent] …status=buying_hint`, `[x402] agent=… amount=$0.05 tx=…`, `[bid] agent=… amount=…`).
+
+**Sealed bids verified, not assumed.** The public room view was probed for every bid amount (`28.7`, `24.38`, `29.85`), the target, the nonce, any `amount` key, and the hint's content — all absent. `api/src/agents.test.ts` locks this as a whitelist test so a future field addition can't quietly leak a bid.
+
+Guard rails confirmed live: re-running a finished agent → `409 ALREADY_BID`; running for a session that never entered → `409 NOT_ENTERED`; no session cookie → `400 NO_SESSION`.
+
+### Real operational constraint — testnet funding is scarce, and it bit
+
+The AlgoKit community dispenser enforces a **daily per-account cap** (~10 ALGO), and each session **permanently locks 0.2 ALGO** in min-balance (0.1 base + 0.1 for holding one ASA) for as long as it holds USDC. A full integration run costs ~5 sessions. Today's cap was exhausted mid-suite, and `POST /api/session` began failing with a real algod error: `account … balance 97000 below min 200000`.
+
+Two things worth recording:
+1. **This is not a code defect** — the funding path is correct; the funder is empty. Confirmed from the raw algod message, not inferred. Incidentally it also served as an unplanned real-world test of Phase 2's failure path, which behaved correctly: caller got a clean `SESSION_FUNDING_FAILED`, the actual reason went to the log, nothing hung and no key was logged.
+2. **Mitigations applied now:** per-session funding tightened `0.3 → 0.25 ALGO` (measured floor is ~0.201, so this is still ~50 transactions of headroom), and `agents.integration.test.ts` was cut from three sessions to **two** — because the only thing that *needs* proving on-chain is "non-buyer pays nothing, buyer settles a real payment, buyer lands closer," which takes one of each. Three-persona coverage is proven for free in the pure brain tests. Cheaper *and* better-targeted.
+
+**Known gap, for Phase 11 (demo mode):** session keys live only in process memory, so a server restart **strands** the ALGO locked in those accounts permanently. Before demo day this needs either pre-provisioned reusable wallets or a close-out/reclaim step that returns a spent session's balance to the dispenser. Flagging now rather than discovering it at 08:30 on Sunday with a rate-limited faucet.
+
+### Test status, stated precisely
+
+- `agent/` — **22/22 passing** (pure brain, no network, ~1.2s), including four tests that guard the demo story itself.
+- `api/` — **36/36 unit tests passing** (~2.8s), including the sealed-bid whitelist.
+- `api/` integration — `chain` and `entry` suites **passed**. `agents.integration.test.ts` is written and typechecks, but **has not completed a green run**: the dispenser's daily cap was exhausted before it could. The behaviour it asserts *was* verified manually with the on-chain evidence above; the automated version is pending fresh testnet funds. Recorded as not-yet-green rather than counted as passing.

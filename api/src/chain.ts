@@ -6,6 +6,7 @@ if (!ALGOD_URL) throw new Error("ALGOD_URL is not set — see .env.example");
 export const algod = new algosdk.Algodv2("", ALGOD_URL, "");
 
 export const USDC_TESTNET_ASA_ID = 10458941;
+export const USDC_DECIMALS = 6;
 
 // The dispenser reuses the x402 resource server's own account (AVM_ADDRESS /
 // RESOURCE_SERVER_PRIVATE_KEY) rather than standing up a third funded testnet
@@ -26,7 +27,12 @@ const dispenserSk = new Uint8Array(Buffer.from(requireEnv("RESOURCE_SERVER_PRIVA
 // dispenser fast — first version of this used 0.5 and emptied a 2-ALGO
 // dispenser in under 4 sessions during testing. 1.00 USDC covers the $0.50
 // entry + $0.05 hint fee with buffer.
-const FUND_ALGO_MICROALGOS = 300_000;
+// Measured floor: 0.1 base account min-balance + 0.1 per-ASA min-balance
+// (both permanently locked while the account holds USDC) + ~0.001 opt-in fee.
+// x402 payments themselves cost the agent 0 in fees — the facilitator sponsors
+// the fee-payer leg, confirmed on-chain across Phases 1/4/5. 0.25 leaves ~0.05
+// spendable, i.e. ~50 transactions of headroom, which is ample.
+const FUND_ALGO_MICROALGOS = 250_000;
 const FUND_USDC_UNITS = 1_000_000;
 
 export interface GeneratedKeypair {
@@ -83,4 +89,16 @@ export async function fundNewAccount(newAddress: string, newAccountSk: Uint8Arra
   const { txid } = await algod.sendRawTransaction(signed).do();
   await algosdk.waitForConfirmation(algod, txid, 4);
   return { groupTxId: txid };
+}
+
+/**
+ * An account's spendable USDC, in dollars. This is the agent's *real* budget —
+ * read from chain rather than tracked as a nominal number server-side, so an
+ * agent that genuinely can't afford a hint declines to buy one for a real reason.
+ * Returns 0 for an account holding none (or not opted in).
+ */
+export async function getUsdcBalance(address: string): Promise<number> {
+  const info = await algod.accountInformation(address).do();
+  const holding = info.assets?.find((a) => Number(a.assetId) === USDC_TESTNET_ASA_ID);
+  return Number(holding?.amount ?? 0) / 10 ** USDC_DECIMALS;
 }

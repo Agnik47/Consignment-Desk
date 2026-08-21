@@ -4,8 +4,9 @@ import { getCookie, setCookie } from "hono/cookie";
 import { paymentMiddleware } from "@x402/hono";
 import { resourceServer, routes } from "./x402.js";
 import { createSession, getSession } from "./sessions.js";
-import { ROOM_ID, getPublicView } from "./rooms.js";
+import { ROOM_ID, PRODUCT_ID, getPublicView, getProduct } from "./rooms.js";
 import { enterRoom, EntryError } from "./entry.js";
+import { runAgent, AgentError, getPublicAgents } from "./agents.js";
 
 const app = new Hono();
 
@@ -44,7 +45,7 @@ app.get("/api/room/:id", (c) => {
   if (id !== ROOM_ID) {
     return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}". This MVP serves a single room: "${ROOM_ID}".` }, 404);
   }
-  return c.json(getPublicView());
+  return c.json({ ...getPublicView(), agents: getPublicAgents() });
 });
 
 // The x402-gated resource. Only reachable with a real settled payment — the
@@ -58,6 +59,16 @@ app.post("/api/room/:id/enter", (c) => {
     return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}". This MVP serves a single room: "${ROOM_ID}".` }, 404);
   }
   return c.json({ ok: true });
+});
+
+// The x402-gated hint — P0-3. Only reachable with a real settled $0.05
+// payment; the middleware returns 402 to everyone else before this runs.
+app.get("/api/product/:id/hint", (c) => {
+  const id = c.req.param("id");
+  if (id !== PRODUCT_ID) {
+    return c.json({ error: "PRODUCT_NOT_FOUND", message: `No product with id "${id}".` }, 404);
+  }
+  return c.json(getProduct().hint);
 });
 
 const ENTRY_ERROR_STATUS: Record<string, 404 | 409 | 500 | 502> = {
@@ -90,9 +101,41 @@ app.post("/api/session/enter", async (c) => {
   }
 });
 
+const AGENT_ERROR_STATUS: Record<string, 400 | 404 | 409 | 500 | 502> = {
+  SESSION_NOT_FOUND: 404,
+  NOT_ENTERED: 409,
+  ALREADY_BID: 409,
+  AGENT_RUNNING: 409,
+  DUPLICATE_BID: 409,
+  BIDDING_CLOSED: 409,
+  LATE_BID: 409,
+  INVALID_BID: 400,
+  PAYMENT_FAILED: 502,
+};
+
+// Runs this session's agent: analyze → maybe buy a hint → bid.
+app.post("/api/session/agent/run", async (c) => {
+  const sessionId = getCookie(c, SESSION_COOKIE);
+  if (!sessionId) {
+    return c.json({ error: "NO_SESSION", message: "Call POST /api/session first." }, 400);
+  }
+
+  try {
+    const agent = await runAgent(sessionId);
+    return c.json(agent);
+  } catch (err) {
+    if (err instanceof AgentError) {
+      console.error(`[agent] ${err.code}:`, err.message);
+      return c.json({ error: err.code, message: err.message }, AGENT_ERROR_STATUS[err.code] ?? 500);
+    }
+    console.error("[agent] unexpected error:", err instanceof Error ? err.message : "unknown error");
+    return c.json({ error: "AGENT_FAILED", message: "Agent run failed. Please try again." }, 500);
+  }
+});
+
 const port = Number(process.env.API_PORT ?? 4021);
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[api] listening on http://localhost:${info.port}`);
-  console.log(`[api] gated routes: GET /api/test-payment, POST /api/room/${ROOM_ID}/enter`);
+  console.log(`[api] gated routes: GET /api/test-payment, POST /api/room/${ROOM_ID}/enter, GET /api/product/${PRODUCT_ID}/hint`);
 });

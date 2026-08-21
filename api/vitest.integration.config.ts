@@ -8,7 +8,10 @@ export default defineConfig({
   test: {
     include: ["**/*.integration.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // Generous because these are real chain round trips, not slow code: the
+    // full three-agent demo cast alone is ~40s (3 fundings + 3 paid entries +
+    // 2 paid hint purchases, each waiting on Algorand's ~3s finality).
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
   },
 });

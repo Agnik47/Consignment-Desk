@@ -223,14 +223,16 @@ agentic-bidding-room/
 │       ├── sessions.ts     #   in-memory session store
 │       ├── rooms.ts        #   room/product state machine + commit-reveal
 │       ├── entry.ts        #   pays room entry on a session's behalf
+│       ├── x402client.ts   #   402→sign→retry, server-side
+│       ├── agents.ts       #   agent worker + state machine
+│       ├── bids.ts         #   one bid per agent, deadline-enforced
 │       └── sockets.ts      #   live agent status             (planned)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
+│       ├── brain.ts        #   pure valuation heuristic + personas
 │       ├── test-payment.ts #   Phase 1 hard-gate E2E check
 │       ├── keygen.ts       #   testnet keypair utility
-│       ├── optin.ts        #   ASA opt-in utility
-│       ├── brain.ts        #   decide → maybe buy hint → bid (planned)
-│       └── client.ts       #   x402 client + signer          (planned)
+│       └── optin.ts        #   ASA opt-in utility
 ├── contracts/              # Algorand Python — sealed-bid escrow (planned)
 ├── web/                    # Next.js App Router — the room UI    (planned)
 ├── docs/                   # PRD · tech stack · agent rules · audit notes
@@ -327,7 +329,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **2** | Wallet provisioning — session-bound testnet keypairs | ✅ **Done — funding verified on-chain** |
 | **3** | Room + product state machine | ✅ **Done — verified live via `GET /api/room/:id`** |
 | **4** | x402-gated room entry | ✅ **Done — real payment settled, race condition tested live** |
-| **5** | Agent workers — 3 personas, heuristic brain | ⬜ Not started |
+| **5** | Agent workers — 3 personas, heuristic brain | 🟡 **Agentic hint purchase proven on-chain; one integration test pending funds** |
 | **6** | Sealed-bid escrow contract | ⬜ Not started |
 | **7** | Agent → contract integration | ⬜ Not started |
 | **8** | Full E2E harness (`npm run test:e2e`) | ⬜ Not started |
@@ -345,6 +347,23 @@ Both services typecheck clean against the real `@x402/*` v2.23.0 types. This is 
 **Also real:** `GET /api/room/:id` serves the room/product state machine (`CREATED → OPEN → BIDDING_CLOSED → REVEALING → SETTLED`, guarded — invalid transitions throw) with a working commit-reveal scheme for the hidden target. Checked structurally, not just "the code doesn't return it": the hidden target, its nonce, and the paid hint are verifiably absent from the public response, while the commitment hash *is* shown (that's the point of committing before bidding opens). Detail in [`docs/implementation-notes.md` §9](docs/implementation-notes.md).
 
 **Also real:** room entry — `POST /api/room/demo-room/enter` is genuinely x402-gated (curl it unpaid, get a real `402` for `$0.50`); `POST /api/session/enter` is the browser-facing action that pays it server-side using the session's own custodial key, via a real loopback HTTP call reusing the exact 402→sign→retry pattern Phase 1 proved. First entry auto-opens the room. A double-click race was tested for real — fired two simultaneous requests at a fresh session, got one real settled `200` and one clean `409`, not a double charge. Detail in [`docs/implementation-notes.md` §10](docs/implementation-notes.md).
+
+**And the one that matters most — P0-3, the agentic payment, is real.** A full three-agent cast ran end to end against testnet. The `conservative` agent judged itself confident enough and spent nothing. The `balanced` and `aggressive` agents each decided, unprompted, that a `$0.05` hint was worth buying — and paid for it themselves:
+
+```
+[agent] agent=agent-2 persona=balanced status=analyzing
+[agent] agent=agent-2 persona=balanced status=buying_hint
+[x402]  agent=agent-2 resource=hint amount=$0.05 tx=EFZ6DFEAKMGIRRE6MQIEIE5IPBNCIXGS5RLR7LGX7VZ5IKAHNBZQ
+[agent] agent=agent-2 persona=balanced status=thinking
+[bid]   agent=agent-2 amount=28.7 hintPurchased=true
+```
+
+Both hint purchases cross-checked on the public indexer, independent of the app's own report: `$0.05` in USDC, **sender = each agent's own wallet**, `fee: 0` (facilitator-sponsored), note `x402-payment-v2-…`. Confidence jumped `0.47 → 0.92` on buying. Final distances from the hidden `$29`: **balanced 0.30 (winner, bought), aggressive 0.85 (bought), conservative 4.62 (didn't)** — both buyers beat the non-buyer, and each buyer would have been *worse off* skipping the hint. That's PRD G4 demonstrated, not asserted, and `agent/src/brain.test.ts` locks it as a test so a later tweak can't silently break the story.
+
+Bids are genuinely sealed: the public room view was probed for every bid amount, the target, the nonce, and the hint text — all absent, and a whitelist test now guards it.
+
+> [!NOTE]
+> One honest gap: `agents.integration.test.ts` (the automated version of the run above) is written and typechecks but **has not completed a green run** — the AlgoKit testnet dispenser's daily cap was exhausted partway through, with a real algod `balance below min` error. That's an external funding limit, not a code defect, and the behaviour it asserts is the on-chain evidence above. Recorded as not-yet-green rather than counted as passing. Detail in [`docs/implementation-notes.md` §11](docs/implementation-notes.md).
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
