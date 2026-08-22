@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 from .camera import Frame
+
+
+class GraderError(RuntimeError):
+    """Raised when the grader can't produce a GradeCard (API failure, or a
+    response that isn't usable JSON even after a retry). Never swallowed
+    silently -- callers decide whether to fail the capture."""
 
 
 @dataclass
@@ -77,3 +84,136 @@ class StubGrader:
             condition=condition,
             grader_confidence=confidence,
         )
+
+
+_GROQ_SYSTEM_PROMPT = """You are an item identification and condition grading assistant for a \
+secondhand consignment shop. You are shown one photo of a single collectible item (e.g. a \
+die-cast model car, trading card, action figure, comic book, vinyl record, or similar). \
+Identify what it is as specifically as you can, and assess its physical condition from the \
+photo alone.
+
+Respond with ONLY a single JSON object, no prose, no markdown fences, matching exactly this shape:
+
+{
+  "category": string,          // short category label, e.g. "die-cast 1:64", "trading card",
+                                // "action figure", "comic book", "vinyl record"; use your best
+                                // judgement if the item doesn't fit a common category
+  "identified_as": string,     // specific identification: brand, model/character, set, year,
+                                // edition -- whatever is visible or inferable
+  "condition": {
+    "box_present": boolean,          // is original packaging/box visible in frame?
+    "box_damage": string,            // describe box condition, or "n/a - no box"
+    "paint_wear": string,             // describe paint/print/surface wear, or "none visible"
+    "completeness": string,          // "appears complete", or note what looks missing
+    "visible_defects": integer       // rough count of distinct visible defects (0 if none)
+  },
+  "grader_confidence": number   // your confidence in this identification, 0.0 to 1.0
+}
+
+Base grader_confidence on how clearly the item and its identifying details are visible in the \
+photo -- lower it for blur, glare, partial framing, or an item you can't confidently identify."""
+
+
+class GroqGrader:
+    """Real vision-model grader: sends the captured frame to a Groq-hosted
+    multimodal model and turns its structured JSON response into a GradeCard.
+
+    Implements the same Grader Protocol as StubGrader -- capture.py just
+    swaps which one it constructs.
+    """
+
+    def __init__(self, api_key: str, model: str, max_retries: int = 1):
+        from groq import Groq  # deferred: keeps the dependency optional for stub-only use
+
+        self._client = Groq(api_key=api_key)
+        self._model = model
+        self._max_retries = max_retries
+
+    def _ask_groq(self, jpeg_bytes: bytes) -> str:
+        image_b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                temperature=0.2,
+                max_completion_tokens=1024,
+                # qwen3.6-27b is a reasoning model: left at its default, hidden
+                # chain-of-thought competes with response_format for the token
+                # budget and reliably produces empty/invalid JSON on harder
+                # images. Turning reasoning off entirely is what makes
+                # response_format=json_object reliable here (verified 10/10
+                # across live + static test images vs. ~50% failure with
+                # reasoning on, even with reasoning_format="hidden").
+                reasoning_effort="none",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": _GROQ_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Identify and grade the item in this photo."},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                            },
+                        ],
+                    },
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001 - re-raised typed, not swallowed
+            raise GraderError(f"Groq API request failed: {exc}") from exc
+
+        content = response.choices[0].message.content
+        if not content:
+            raise GraderError("Groq response had no content.")
+        return content
+
+    @staticmethod
+    def _parse(content: str, item_id: str) -> GradeCard:
+        content = content.strip()
+        if content.startswith("```"):
+            # Defensive: strip a ```json ... ``` fence if the model adds one
+            # despite response_format=json_object and the "ONLY a JSON object"
+            # instruction.
+            content = content.strip("`")
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise GraderError(f"Groq response was not valid JSON: {exc}") from exc
+
+        try:
+            condition = data["condition"]
+            grade_card = GradeCard(
+                item_id=item_id,
+                category=str(data["category"]),
+                identified_as=str(data["identified_as"]),
+                condition={
+                    "box_present": bool(condition["box_present"]),
+                    "box_damage": str(condition["box_damage"]),
+                    "paint_wear": str(condition["paint_wear"]),
+                    "completeness": str(condition["completeness"]),
+                    "visible_defects": int(condition["visible_defects"]),
+                },
+                grader_confidence=max(0.0, min(1.0, float(data["grader_confidence"]))),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GraderError(f"Groq response JSON was missing/malformed fields: {exc}") from exc
+
+        return grade_card
+
+    def grade(self, frame: Frame, item_id: str) -> GradeCard:
+        jpeg_bytes = frame.to_jpeg_bytes()
+
+        last_error: GraderError | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                content = self._ask_groq(jpeg_bytes)
+                return self._parse(content, item_id)
+            except GraderError as exc:
+                last_error = exc
+
+        assert last_error is not None
+        raise last_error

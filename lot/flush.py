@@ -10,7 +10,7 @@ from .queue import UploadQueue
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        settings = load_settings(require_supabase=True)
+        settings = load_settings(require_supabase=True, require_groq=False)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1

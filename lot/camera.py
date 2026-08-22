@@ -88,6 +88,32 @@ class USBCamera:
         height, width = image.shape[:2]
         return Frame(image=image, width=width, height=height, captured_at=time.time())
 
+    def iter_frames(self):
+        """Continuous frame generator for live streaming.
+
+        Unlike read(), which re-warms up on every call (right for a single
+        deliberate still), this warms up once and then yields frames as fast
+        as the camera provides them -- what a streaming consumer (Feature 2)
+        needs. Runs until the camera stops returning frames, which raises.
+        """
+        if self._cap is None:
+            raise CameraError("Camera is not open. Call open() (or use as a context manager) first.")
+
+        for i in range(self.warmup_frames):
+            ok, _ = self._cap.read()
+            if not ok:
+                raise CameraError(
+                    f"Camera {self.device!r} stopped returning frames during warm-up "
+                    f"(frame {i + 1}/{self.warmup_frames})."
+                )
+
+        while True:
+            ok, image = self._cap.read()
+            if not ok or image is None:
+                raise CameraError(f"Camera {self.device!r} stopped returning frames.")
+            height, width = image.shape[:2]
+            yield Frame(image=image, width=width, height=height, captured_at=time.time())
+
     def close(self) -> None:
         if self._cap is not None:
             self._cap.release()

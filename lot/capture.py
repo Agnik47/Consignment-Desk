@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .camera import CameraError, Frame, USBCamera
 from .config import ConfigError, load_settings
-from .grader import GradeCard, StubGrader
+from .grader import GradeCard, GraderError, GroqGrader
 from .publish import PublishError, make_client, publish
 from .queue import UploadQueue
 
@@ -65,7 +65,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Camera error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    grade_card = StubGrader().grade(frame, item_id)
+    grader = GroqGrader(api_key=settings.groq_api_key, model=settings.groq_model)
+    try:
+        grade_card = grader.grade(frame, item_id)
+    except GraderError as exc:
+        print(f"Grading error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
     jpeg_bytes = frame.to_jpeg_bytes(settings.jpeg_quality)
 
     local_path = _save_local(settings.captures_dir, item_id, captured_at, jpeg_bytes, grade_card)
