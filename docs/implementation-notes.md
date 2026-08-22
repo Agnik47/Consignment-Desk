@@ -334,3 +334,78 @@ Resolved with `syncChainToWallClock()` at the end of `deployRoom`: drag chain ti
 Covers every behaviour AGENTS.md Phase 6/7 lists: normal winner (with balances checked on all four sides — winner holds the item, winner's stake consumed, treasury holds the fee, losers refunded to net-zero), duplicate bid rejected, late bid rejected, reveal with a mismatched guess/nonce rejected, settle with a target that doesn't match the room commitment rejected, no-bids settlement returning the item to the seller, and the earliest-commit tie-break.
 
 **Not yet done (Phase 7):** this contract is not wired to the backend. `api/src/bids.ts` still holds bids in memory, which AGENTS.md §6 explicitly forbids as the authoritative settlement record. Phase 7 replaces it — agents must opt into the product asset, commit real on-chain bids, and the winner must come from `settle()`'s return value rather than any backend calculation. Deploying to **testnet** also still pending (LocalNet only so far).
+
+---
+
+## 13. Phase 7 — Agent → Contract Integration findings (22 Aug 2026)
+
+The contract is now **deployed to Algorand testnet and wired to the backend**. Bids are real on-chain commitments with real escrowed USDC, and the winner comes from `settle()`'s return value — the backend no longer decides anything (AGENTS.md §6).
+
+**Deployed:** app [`769662442`](https://lora.algokit.io/testnet/application/769662442), product ASA `769662460` (1 unit, minted by and held in the contract's escrow), treasury `IGJVW4U3ZAXJGRCK3WEJI2YJ63KLO6OXE6R7HRIZPM4UHAC2EMLRZ4TDLU`. Verified on-chain immediately after deploy: the app account holds the product ASA and is opted into USDC.
+
+### A real integration bug caught by reading, before it could cost a demo
+
+`rooms.ts` was committing `sha256("29:<hex nonce>")` while the contract computes `sha256(itob(uint64) ‖ nonceBytes)`. **Structurally incompatible** — every `reveal_bid` would have been rejected on-chain with "guess/nonce does not match the commitment", and the failure would only have surfaced at settlement time, i.e. live on stage. Rewrote the backend's scheme to the contract's exact byte layout and verified it produces identical digests to the implementation already proven against the real contract by the Phase 6 LocalNet suite.
+
+That fix forced a second one: the contract's guess/target are `UInt64` with no decimals, while the valuation heuristic works in dollars (`28.7`). **Integer cents is now the unit at every contract boundary** (`toCents`/`fromCents` in `rooms.ts`); dollars survive only in display.
+
+### Two open questions resolved deliberately, not by drift
+
+- **Bid stake scaled to $0.10.** The PRD's $20 product value is not fundable as real escrow: each session has ~$0.45 spare after the $0.50 entry and $0.05 hint, and Circle's faucet grants 20 USDC per 2 hours. Rather than stall for hours of faucet cycles, the stake is demo-scaled — **every mechanic still runs for real** (escrow, payout, 5% fee split, refunds), just at an amount testnet funding sustains. The $20/$29 product economics remain the display narrative. Say this plainly on stage.
+- **Treasury is a distinct, funded address** (resolves PRD §7's open question in favour of the more convincing option): the platform fee is a separate, verifiable on-chain transfer at settlement rather than an implicit bookkeeping entry.
+
+### Architecture
+
+- **`api/src/contract.ts`** — the contract client. Wraps each session's server-held key as a signer, opts agents into the product asset, commits bids, reveals, and settles.
+- **`api/src/settlement.ts`** — reveal + settle orchestration. Contains **no winner logic**: it opens each commitment on-chain, calls `settle()`, and reports the address the contract returned.
+- **`api/src/bids.ts`** — demoted to an explicit **mirror, not source of truth**. Its remaining job is holding the nonces that open each commitment, which the chain deliberately cannot know. Its duplicate/late/closed checks are kept as *pre-flight* guards so a doomed bid fails with a readable reason instead of burning a real transaction on a raw AVM assert — the contract enforces all of them independently and wins any disagreement.
+- **Room opening is now dual**: `ensureOpenForEntry()` opens the backend room *and* calls `open_room` on-chain, because the contract rejects `commit_bid` on an unopened room. A restarted backend resets its in-memory room to `CREATED` while the deployed contract stays `OPEN`; that mismatch is benign (bidding still works) so it logs a warning rather than blocking entry.
+
+### Session funding raised again
+
+Agents must opt into the product asset to be eligible to win (Phase 6's finding), which permanently locks another 0.1 ALGO. Per-session funding went **0.25 → 0.4 ALGO**: 0.1 base + 0.1 USDC slot + 0.1 product slot = 0.3 locked, leaving ~0.1 spendable (~100 transactions of headroom).
+
+### Verified live on testnet
+
+Two agents through the complete loop:
+
+- Both sessions funded, both paid the real `$0.50` x402 entry fee.
+- Room opened on-chain (`open_room`, tx `WZX3LTCTODIQ5EEVYO2IK2LLLG6R54GV3IE5IGUKZWJD4GKT7KFA`).
+- `agent-1` (conservative) declined the hint; `agent-2` (balanced) autonomously bought one, confidence `0.47 → 0.92`.
+- Both submitted **real on-chain sealed bids**, each escrowing `$0.10` USDC.
+- Contract account independently checked mid-run: **0.20 USDC escrowed**, product ASA still held, **4 boxes** allocated (one bid record + one index entry per bidder) — the escrow is genuinely on-chain, not bookkeeping.
+- Settling before the deadline correctly returned `409 TOO_EARLY`.
+
+### Settlement verified end-to-end on testnet
+
+Settled after the deadline. The contract — not the backend — returned the winner:
+
+```
+winner: agent-2  (bought the hint)
+  agent-2  guess $28.70  distance 0.30   <- WINNER
+  agent-1  guess $24.38  distance 4.62
+  target   $29.00
+```
+
+Balances before → after, all four parties reconciling exactly:
+
+| party | before | after | change |
+|---|---|---|---|
+| agent-1 (lost) | 0.40 | 0.50 | **+0.10** — full stake refunded |
+| agent-2 (won) | 0.35 | 0.35 **+ product ASA** | stake consumed, item received |
+| seller | 1.26 | 1.355 | **+0.095** (95%) |
+| treasury | 0.00 | 0.005 | **+0.005** (5% platform fee) |
+| contract | 0.20 + item | **0.00, 0 items** | escrow fully drained |
+
+**Atomicity confirmed independently on the public indexer** (tx `AN427KUXNDTD3YDWZCDLVT3GCIOJHONEXFQCN4ZT4XIVHI6RH35A`, round 66552424, group `Su6aegkhExNqBz0ZRarfHegzsonYbipafyK179TQW1E=`) — a single transaction carrying **4 inner transactions**:
+
+```
+-> asset 10458941  amt  95000  to seller     (95%)
+-> asset 10458941  amt   5000  to treasury   (5% fee)
+-> asset 769662460 amt      1  to winner     (the product)
+-> asset 10458941  amt 100000  to loser      (refund)
+```
+
+That is PRD **P0-6** met literally: winner payout, seller proceeds, platform fee, ownership transfer, and loser refund all in **one atomic grouped transaction**, with the winner determined on-chain.
+
+**Still open for later phases:** the reveal step is operator-driven (the backend holds the nonces and opens each commitment), which is honest demo-grade commit-reveal, not trustless sealed bidding — the operator technically learns guesses at reveal time and could in principle withhold a reveal. Say that plainly rather than overclaiming (AGENTS.md Rule 6). Also unbuilt: the UI (Phase 9) and a one-command E2E harness (Phase 8) — the run above was driven by individual HTTP calls.

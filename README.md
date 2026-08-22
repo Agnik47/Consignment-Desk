@@ -225,7 +225,9 @@ agentic-bidding-room/
 │       ├── entry.ts        #   pays room entry on a session's behalf
 │       ├── x402client.ts   #   402→sign→retry, server-side
 │       ├── agents.ts       #   agent worker + state machine
-│       ├── bids.ts         #   one bid per agent, deadline-enforced
+│       ├── contract.ts     #   deployed BiddingRoom client
+│       ├── settlement.ts   #   reveal + atomic settle (winner from chain)
+│       ├── bids.ts         #   local mirror of on-chain bids (nonces)
 │       └── sockets.ts      #   live agent status             (planned)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
@@ -335,7 +337,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **4** | x402-gated room entry | ✅ **Done — real payment settled, race condition tested live** |
 | **5** | Agent workers — 3 personas, heuristic brain | 🟡 **Agentic hint purchase proven on-chain; one integration test pending funds** |
 | **6** | Sealed-bid escrow contract | ✅ **Done — 7/7 passing on LocalNet** |
-| **7** | Agent → contract integration | ⬜ Not started |
+| **7** | Agent → contract integration | ✅ **Done — settled on testnet, verified on-chain** |
 | **8** | Full E2E harness (`npm run test:e2e`) | ⬜ Not started |
 | **9** | Room UI + reveal view | ⬜ Not started |
 
@@ -378,7 +380,29 @@ Three real Algorand constraints surfaced only by running it, each documented in 
 - **Inner-transaction fees default to zero** — a Python default, not an AVM auto-calculation — so every inner transaction needs an explicit `fee=Global.min_txn_fee`.
 
 > [!NOTE]
-> Still to do in Phase 7: the contract is **not yet wired to the backend**. `api/src/bids.ts` holds bids in memory, which AGENTS.md §6 explicitly forbids as the authoritative settlement record — the winner must come from `settle()`'s return value, not a backend calculation. Testnet deployment is also still pending; LocalNet only so far.
+**The whole loop now closes on testnet.** The contract is [deployed live](https://lora.algokit.io/testnet/application/769662442) (app `769662442`), agents submit **real on-chain sealed bids** with real escrowed USDC, and the winner comes from `settle()`'s return value — the backend computes nothing.
+
+A full two-agent run, settled and verified:
+
+```
+target  $29.00   (revealed from its on-chain commitment)
+  agent-2   guess $28.70   distance 0.30   <- WINNER  (bought the hint)
+  agent-1   guess $24.38   distance 4.62             (didn't)
+```
+
+Balances reconcile exactly — loser refunded in full, winner's stake consumed and the product ASA transferred, seller paid 95%, treasury paid the 5% fee, contract escrow drained to zero. And it's genuinely **atomic**: the public indexer shows one transaction group carrying four inner transactions.
+
+```
+-> asset 10458941  amt  95000  to seller     (95%)
+-> asset 10458941  amt   5000  to treasury   (5% fee)     <- visible fee
+-> asset 769662460 amt      1  to winner     (the product)
+-> asset 10458941  amt 100000  to loser      (refund)
+```
+
+That's PRD **P0-6** met literally. Detail in [`docs/implementation-notes.md` §13](docs/implementation-notes.md).
+
+> [!NOTE]
+> Two things stated plainly rather than glossed: the **bid stake is demo-scaled to $0.10** (the PRD's $20 isn't fundable as real escrow — Circle's faucet gives 20 USDC per 2 hours; every mechanic still runs for real, just smaller), and the **reveal step is operator-driven** — the backend holds the nonces, so this is honest demo-grade commit-reveal, not trustless sealed bidding.
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>

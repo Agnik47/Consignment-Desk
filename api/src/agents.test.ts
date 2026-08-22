@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getPublicAgents, resetAgentsForTests } from "./agents.js";
 import { openRoom, resetForTests } from "./rooms.js";
-import { submitBid, resetBidsForTests } from "./bids.js";
+import { recordBid, resetBidsForTests } from "./bids.js";
 
 beforeEach(() => {
   resetForTests();
@@ -16,14 +16,23 @@ beforeEach(() => {
 describe("public agent view keeps bids sealed", () => {
   it("reports that an agent has bid without exposing the amount", () => {
     openRoom(60_000);
-    submitBid("s1", "agent-1", 28.7);
+    recordBid({
+      sessionId: "s1",
+      agentId: "agent-1",
+      address: "AAAA",
+      guessCents: 2870,
+      nonceHex: "ab".repeat(32),
+      commitment: "cc".repeat(32),
+      txId: "TX1",
+    });
 
     // The agent record is created by runAgent(); with none present the view is
     // empty, so this asserts the shape contract on the serialized output for
     // any agent that *does* exist plus the bid store's own leak-resistance.
     const serialized = JSON.stringify(getPublicAgents());
-    expect(serialized).not.toContain("28.7");
-    expect(serialized).not.toContain("amount");
+    expect(serialized).not.toContain("2870");
+    expect(serialized).not.toContain("guessCents");
+    expect(serialized).not.toContain("nonceHex");
   });
 
   it("exposes only whitelisted fields — no bid amount key can appear", () => {

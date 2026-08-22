@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { submitBid, getBid, getAllBids, hasBid, resetBidsForTests } from "./bids.js";
+import { recordBid, assertCanBid, assertValidGuess, getBid, getAllBids, hasBid, resetBidsForTests } from "./bids.js";
 import { closeBidding, openRoom, resetForTests } from "./rooms.js";
 
 beforeEach(() => {
@@ -7,58 +7,75 @@ beforeEach(() => {
   resetBidsForTests();
 });
 
-describe("submitBid", () => {
-  it("accepts a valid bid while the room is open", () => {
-    openRoom(60_000);
-    const bid = submitBid("s1", "agent-1", 28.7);
+const SAMPLE = {
+  sessionId: "s1",
+  agentId: "agent-1",
+  address: "AAAA",
+  guessCents: 2870,
+  nonceHex: "ab".repeat(32),
+  commitment: "cc".repeat(32),
+  txId: "TX1",
+};
 
-    expect(bid).toMatchObject({ sessionId: "s1", agentId: "agent-1", amount: 28.7 });
-    expect(getBid("agent-1")).toEqual(bid);
-    expect(hasBid("agent-1")).toBe(true);
+// These guard the *pre-flight* checks that stop us burning a real transaction
+// on a bid the contract would reject anyway. The contract enforces the same
+// rules independently and remains the authority — see bids.ts and the
+// LocalNet suite in contracts/bidding_room.test.ts.
+describe("assertCanBid", () => {
+  it("permits a bid while the room is open", () => {
+    openRoom(60_000);
+    expect(() => assertCanBid("agent-1")).not.toThrow();
   });
 
   it("rejects a second bid from the same agent — exactly one bid each", () => {
     openRoom(60_000);
-    submitBid("s1", "agent-1", 28.7);
-
-    expect(() => submitBid("s1", "agent-1", 30)).toThrow(/already submitted/i);
-    expect(getBid("agent-1")?.amount).toBe(28.7);
-    expect(getAllBids()).toHaveLength(1);
+    recordBid(SAMPLE);
+    expect(() => assertCanBid("agent-1")).toThrow(/already submitted/i);
   });
 
-  it("still allows a different agent to bid", () => {
+  it("still permits a different agent to bid", () => {
     openRoom(60_000);
-    submitBid("s1", "agent-1", 24.38);
-    submitBid("s2", "agent-2", 28.7);
-    expect(getAllBids()).toHaveLength(2);
+    recordBid(SAMPLE);
+    expect(() => assertCanBid("agent-2")).not.toThrow();
   });
 
   it("rejects a bid before the room has opened", () => {
-    expect(() => submitBid("s1", "agent-1", 28.7)).toThrow(/not accepting bids/i);
+    expect(() => assertCanBid("agent-1")).toThrow(/not accepting bids/i);
   });
 
   it("rejects a bid once bidding has closed", () => {
     openRoom(60_000);
     closeBidding();
-    expect(() => submitBid("s1", "agent-1", 28.7)).toThrow(/not accepting bids/i);
+    expect(() => assertCanBid("agent-1")).toThrow(/not accepting bids/i);
   });
 
   it("rejects a bid submitted after the deadline", () => {
     openRoom(-1); // deadline already in the past
-    expect(() => submitBid("s1", "agent-1", 28.7)).toThrow(/deadline has passed/i);
+    expect(() => assertCanBid("agent-1")).toThrow(/deadline has passed/i);
+  });
+});
+
+describe("assertValidGuess", () => {
+  it("rejects non-positive, fractional, and non-finite amounts", () => {
+    expect(() => assertValidGuess(0)).toThrow(/positive whole number/i);
+    expect(() => assertValidGuess(-5)).toThrow(/positive whole number/i);
+    expect(() => assertValidGuess(28.7)).toThrow(/positive whole number/i);
+    expect(() => assertValidGuess(Number.NaN)).toThrow(/positive whole number/i);
   });
 
-  it("rejects non-positive and non-finite amounts", () => {
-    openRoom(60_000);
-    expect(() => submitBid("s1", "agent-1", 0)).toThrow(/positive number/i);
-    expect(() => submitBid("s1", "agent-1", -5)).toThrow(/positive number/i);
-    expect(() => submitBid("s1", "agent-1", Number.NaN)).toThrow(/positive number/i);
+  it("accepts a positive whole number of cents", () => {
+    expect(() => assertValidGuess(2870)).not.toThrow();
   });
+});
 
-  it("records a rejected bid nowhere — a failed submit leaves no trace", () => {
+describe("recordBid", () => {
+  it("stores the nonce needed to open the commitment at reveal", () => {
     openRoom(60_000);
-    expect(() => submitBid("s1", "agent-1", -5)).toThrow();
-    expect(hasBid("agent-1")).toBe(false);
-    expect(getAllBids()).toHaveLength(0);
+    const bid = recordBid(SAMPLE);
+
+    expect(bid).toMatchObject({ agentId: "agent-1", guessCents: 2870, txId: "TX1" });
+    expect(getBid("agent-1")?.nonceHex).toBe(SAMPLE.nonceHex);
+    expect(hasBid("agent-1")).toBe(true);
+    expect(getAllBids()).toHaveLength(1);
   });
 });

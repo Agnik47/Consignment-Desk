@@ -5,10 +5,13 @@ vi.mock("./sessions.js", () => ({
   getSigningKey: vi.fn(),
 }));
 
+vi.mock("./contract.js", () => ({ openRoomOnChain: vi.fn() }));
+
 vi.mock("./rooms.js", () => ({
   ROOM_ID: "demo-room",
   PRODUCT_ID: "demo-product",
   ensureOpenForEntry: vi.fn(),
+  getRoom: vi.fn(() => ({ status: "OPEN", deadline: null })),
   hasEntered: vi.fn(() => false),
   getParticipant: vi.fn(() => undefined),
   recordEntry: vi.fn(),

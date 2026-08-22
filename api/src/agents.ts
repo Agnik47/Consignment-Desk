@@ -23,9 +23,11 @@ import {
 import { HINT_PATH, HINT_PRICE_USD } from "./x402.js";
 import { payAndFetch, PaymentError } from "./x402client.js";
 import { getSession } from "./sessions.js";
-import { getParticipant, getProduct } from "./rooms.js";
-import { submitBid, BidError, getBid } from "./bids.js";
+import crypto from "node:crypto";
+import { getParticipant, getProduct, createCommitment, toCents } from "./rooms.js";
+import { recordBid, assertCanBid, assertValidGuess, BidError, getBid } from "./bids.js";
 import { getUsdcBalance } from "./chain.js";
+import { commitBidOnChain, optInToProduct, assertCanStake } from "./contract.js";
 
 export type AgentStatus = "idle" | "analyzing" | "buying_hint" | "thinking" | "bid_submitted" | "failed";
 
@@ -37,6 +39,7 @@ export interface AgentRecord {
   confidence: number | null;
   hintPurchased: boolean;
   hintTxId: string | null;
+  bidTxId: string | null;
   failureCode: string | null;
   failureMessage: string | null;
   updatedAt: number;
@@ -103,6 +106,7 @@ function ensureAgent(agentId: string, sessionId: string, persona: Persona): Agen
     confidence: null,
     hintPurchased: false,
     hintTxId: null,
+    bidTxId: null,
     failureCode: null,
     failureMessage: null,
     updatedAt: Date.now(),
@@ -178,11 +182,34 @@ export async function runAgent(sessionId: string): Promise<AgentRecord> {
     }
 
     setStatus(record, "thinking", { confidence: confidence(view, hint) });
-    const amount = estimate(view, persona, hint);
+    const guessCents = toCents(estimate(view, persona, hint));
 
     try {
-      const bid = submitBid(sessionId, agentId, amount);
-      console.log(`[bid] agent=${agentId} amount=${bid.amount} hintPurchased=${record.hintPurchased}`);
+      assertValidGuess(guessCents);
+      assertCanBid(agentId);
+      await assertCanStake(sessionId);
+
+      // Must hold a product-asset slot to be eligible to win — the contract
+      // cannot push the ASA to an account that hasn't opted in.
+      await optInToProduct(sessionId);
+
+      // The guess never goes on-chain; only its commitment does.
+      const nonceHex = crypto.randomBytes(32).toString("hex");
+      const commitment = createCommitment(guessCents, nonceHex);
+
+      const onChain = await commitBidOnChain(sessionId, commitment, guessCents, nonceHex);
+
+      recordBid({
+        sessionId,
+        agentId,
+        address: participant.address,
+        guessCents,
+        nonceHex,
+        commitment,
+        txId: onChain.txId,
+      });
+      record.bidTxId = onChain.txId;
+      console.log(`[bid] agent=${agentId} commitment=${commitment.slice(0, 16)}… tx=${onChain.txId} hintPurchased=${record.hintPurchased}`);
     } catch (err) {
       const code = err instanceof BidError ? err.code : "BID_REJECTED";
       const message = err instanceof Error ? err.message : "Bid rejected.";

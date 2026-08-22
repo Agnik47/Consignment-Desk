@@ -6,7 +6,8 @@
 import { ENTER_ROOM_PATH } from "./x402.js";
 import { payAndFetch, PaymentError } from "./x402client.js";
 import { getSession } from "./sessions.js";
-import { ensureOpenForEntry, getParticipant, recordEntry } from "./rooms.js";
+import { ensureOpenForEntry, getParticipant, recordEntry, getRoom } from "./rooms.js";
+import { openRoomOnChain } from "./contract.js";
 import type { Participant } from "./rooms.js";
 
 export class EntryError extends Error {
@@ -39,10 +40,26 @@ export async function enterRoom(sessionId: string): Promise<Participant> {
   pending.add(sessionId);
 
   try {
+    const wasUnopened = getRoom().status === "CREATED";
+    let room;
     try {
-      ensureOpenForEntry();
+      room = ensureOpenForEntry();
     } catch (err) {
       throw new EntryError("ROOM_NOT_OPEN", err instanceof Error ? err.message : "Room is not accepting entries.");
+    }
+
+    // The backend room and the on-chain room must open together, or the
+    // contract rejects every commit_bid with "room is not open for bids".
+    if (wasUnopened && room.deadline !== null) {
+      try {
+        const txId = await openRoomOnChain(Math.floor(room.deadline / 1000));
+        console.log(`[room] opened on-chain deadline=${room.deadline} tx=${txId}`);
+      } catch (err) {
+        // A restarted backend resets its in-memory room to CREATED while the
+        // deployed contract is already OPEN. That's benign — bidding still
+        // works — so log it rather than blocking entry.
+        console.warn("[room] on-chain open_room skipped:", err instanceof Error ? err.message : "unknown");
+      }
     }
 
     let entryTxId: string;

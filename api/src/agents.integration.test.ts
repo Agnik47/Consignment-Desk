@@ -3,7 +3,7 @@ import { createSession } from "./sessions.js";
 import { enterRoom } from "./entry.js";
 import { runAgent, resetAgentsForTests } from "./agents.js";
 import { getBid, resetBidsForTests } from "./bids.js";
-import { getProduct, resetForTests } from "./rooms.js";
+import { getProduct, resetForTests, toCents } from "./rooms.js";
 
 // Real testnet: real session funding, a real x402 entry fee each, and a real
 // agent-initiated x402 hint purchase for the persona that decides to buy.
@@ -24,7 +24,7 @@ describe("agent hint purchase (real Algorand testnet)", () => {
     resetBidsForTests();
     resetAgentsForTests();
 
-    const target = getProduct().hiddenTarget;
+    const targetCents = toCents(getProduct().hiddenTarget);
     const cast = [];
 
     // agent-1 → conservative (declines the hint), agent-2 → balanced (buys it).
@@ -36,7 +36,7 @@ describe("agent hint purchase (real Algorand testnet)", () => {
 
       expect(agent.status).toBe("bid_submitted");
       expect(bid).toBeDefined();
-      cast.push({ agent, distance: Math.abs(bid!.amount - target) });
+      cast.push({ agent, distance: Math.abs(bid!.guessCents - targetCents) });
     }
 
     const [nonBuyer, buyer] = cast;

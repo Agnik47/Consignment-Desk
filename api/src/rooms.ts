@@ -55,13 +55,41 @@ export const PRODUCT_ID = "demo-product";
 // bidding closes — placeholder for the demo-mode config Phase 11 will own.
 export const DEFAULT_BIDDING_WINDOW_MS = 5 * 60 * 1000;
 
-/** commitment = SHA-256(target || nonce), serialized with an explicit delimiter to avoid any concatenation ambiguity. */
-export function createCommitment(target: number, nonce: string): string {
-  return crypto.createHash("sha256").update(`${target}:${nonce}`).digest("hex");
+/**
+ * Money is carried as INTEGER CENTS everywhere it crosses the contract
+ * boundary. The contract's guess/target are `UInt64` — it has no decimals —
+ * while the valuation heuristic works in dollars (28.7). Cents is the lossless
+ * meeting point: $28.70 -> 2870.
+ */
+export function toCents(dollars: number): number {
+  return Math.round(dollars * 100);
 }
 
-export function verifyCommitment(target: number, nonce: string, commitment: string): boolean {
-  return createCommitment(target, nonce) === commitment;
+export function fromCents(cents: number): number {
+  return cents / 100;
+}
+
+/**
+ * commitment = SHA-256(itob(cents) ‖ nonceBytes)
+ *
+ * This MUST byte-for-byte match `_sha256_commitment` in
+ * contracts/bidding_room/contract.py — an 8-byte big-endian uint64 followed by
+ * the raw nonce bytes. An earlier version hashed the string `"29:<hex nonce>"`
+ * instead, which the contract would have rejected at reveal time with
+ * "guess/nonce does not match the commitment". This exact byte layout is the
+ * one proven against the real contract by the Phase 6 LocalNet suite.
+ */
+export function createCommitment(cents: number, nonceHex: string): string {
+  const valueBytes = Buffer.alloc(8);
+  valueBytes.writeBigUInt64BE(BigInt(cents));
+  return crypto
+    .createHash("sha256")
+    .update(Buffer.concat([valueBytes, Buffer.from(nonceHex, "hex")]))
+    .digest("hex");
+}
+
+export function verifyCommitment(cents: number, nonceHex: string, commitment: string): boolean {
+  return createCommitment(cents, nonceHex) === commitment;
 }
 
 function seedProduct(): Product {
@@ -76,7 +104,7 @@ function seedProduct(): Product {
     hint: { key: "condition", value: "excellent — tested, film advances correctly" },
     hiddenTarget,
     targetNonce,
-    commitment: createCommitment(hiddenTarget, targetNonce),
+    commitment: createCommitment(toCents(hiddenTarget), targetNonce),
   };
 }
 

@@ -7,6 +7,7 @@ import { createSession, getSession } from "./sessions.js";
 import { ROOM_ID, PRODUCT_ID, getPublicView, getProduct } from "./rooms.js";
 import { enterRoom, EntryError } from "./entry.js";
 import { runAgent, AgentError, getPublicAgents } from "./agents.js";
+import { revealAndSettle, revealView, SettlementError } from "./settlement.js";
 
 const app = new Hono();
 
@@ -130,6 +131,32 @@ app.post("/api/session/agent/run", async (c) => {
     }
     console.error("[agent] unexpected error:", err instanceof Error ? err.message : "unknown error");
     return c.json({ error: "AGENT_FAILED", message: "Agent run failed. Please try again." }, 500);
+  }
+});
+
+const SETTLEMENT_ERROR_STATUS: Record<string, 409 | 500> = {
+  ROOM_NOT_OPEN: 409,
+  TOO_EARLY: 409,
+};
+
+// Reveals every commitment on-chain, then settles atomically. The winner in
+// the response is whatever the CONTRACT returned — never computed here.
+app.post("/api/room/:id/settle", async (c) => {
+  const id = c.req.param("id");
+  if (id !== ROOM_ID) {
+    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
+  }
+
+  try {
+    const report = await revealAndSettle();
+    return c.json(revealView(report));
+  } catch (err) {
+    if (err instanceof SettlementError) {
+      console.error(`[settlement] ${err.code}:`, err.message);
+      return c.json({ error: err.code, message: err.message }, SETTLEMENT_ERROR_STATUS[err.code] ?? 500);
+    }
+    console.error("[settlement] unexpected error:", err instanceof Error ? err.message : "unknown error");
+    return c.json({ error: "SETTLEMENT_FAILED", message: "Could not settle the room." }, 500);
   }
 });
 

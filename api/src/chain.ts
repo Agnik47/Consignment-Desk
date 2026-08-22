@@ -27,12 +27,13 @@ const dispenserSk = new Uint8Array(Buffer.from(requireEnv("RESOURCE_SERVER_PRIVA
 // dispenser fast — first version of this used 0.5 and emptied a 2-ALGO
 // dispenser in under 4 sessions during testing. 1.00 USDC covers the $0.50
 // entry + $0.05 hint fee with buffer.
-// Measured floor: 0.1 base account min-balance + 0.1 per-ASA min-balance
-// (both permanently locked while the account holds USDC) + ~0.001 opt-in fee.
+// Measured floor: 0.1 base account min-balance + 0.1 per-ASA min-balance for
+// USDC + 0.1 more for the product ASA an agent must opt into to be eligible to
+// win (Phase 7) = 0.3 permanently locked, plus opt-in and bid transaction fees.
 // x402 payments themselves cost the agent 0 in fees — the facilitator sponsors
-// the fee-payer leg, confirmed on-chain across Phases 1/4/5. 0.25 leaves ~0.05
-// spendable, i.e. ~50 transactions of headroom, which is ample.
-const FUND_ALGO_MICROALGOS = 250_000;
+// the fee-payer leg, confirmed on-chain across Phases 1/4/5. 0.4 leaves ~0.1
+// spendable, i.e. ~100 transactions of headroom.
+const FUND_ALGO_MICROALGOS = 400_000;
 const FUND_USDC_UNITS = 1_000_000;
 
 export interface GeneratedKeypair {

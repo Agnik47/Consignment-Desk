@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   closeBidding,
   createCommitment,
+  toCents,
   getProduct,
   getPublicView,
   getRoom,
@@ -19,21 +20,21 @@ beforeEach(() => {
 describe("commit-reveal", () => {
   it("verifies a correct target and nonce against the commitment", () => {
     const product = getProduct();
-    expect(verifyCommitment(product.hiddenTarget, product.targetNonce, product.commitment)).toBe(true);
+    expect(verifyCommitment(toCents(product.hiddenTarget), product.targetNonce, product.commitment)).toBe(true);
   });
 
   it("rejects a tampered target", () => {
     const product = getProduct();
-    expect(verifyCommitment(product.hiddenTarget + 1, product.targetNonce, product.commitment)).toBe(false);
+    expect(verifyCommitment(toCents(product.hiddenTarget) + 1, product.targetNonce, product.commitment)).toBe(false);
   });
 
   it("rejects a tampered nonce", () => {
     const product = getProduct();
-    expect(verifyCommitment(product.hiddenTarget, "not-the-real-nonce", product.commitment)).toBe(false);
+    expect(verifyCommitment(toCents(product.hiddenTarget), "deadbeef".repeat(8), product.commitment)).toBe(false);
   });
 
   it("produces different commitments for different nonces (no fixed hash reuse)", () => {
-    expect(createCommitment(29, "nonce-a")).not.toBe(createCommitment(29, "nonce-b"));
+    expect(createCommitment(2900, "aa".repeat(32))).not.toBe(createCommitment(2900, "bb".repeat(32)));
   });
 });
 
