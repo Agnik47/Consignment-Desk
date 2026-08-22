@@ -43,7 +43,9 @@ export async function enterRoom(sessionId: string): Promise<Participant> {
     const wasUnopened = getRoom().status === "CREATED";
     let room;
     try {
-      room = ensureOpenForEntry();
+      room = ensureOpenForEntry(
+        process.env.BIDDING_WINDOW_MS ? Number(process.env.BIDDING_WINDOW_MS) : undefined,
+      );
     } catch (err) {
       throw new EntryError("ROOM_NOT_OPEN", err instanceof Error ? err.message : "Room is not accepting entries.");
     }

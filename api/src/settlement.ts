@@ -42,6 +42,17 @@ export interface SettlementReport {
 
 const explorer = (txId: string) => `https://lora.algokit.io/testnet/transaction/${txId}`;
 
+// The reveal page needs this after the tab that triggered settle() is long
+// gone (a phone that scanned the QR earlier, a projector refreshing later) —
+// the settle response itself is otherwise a one-time thing nobody else can
+// ever see again. Module state is consistent with the rest of this MVP's
+// single-room, single-process model (rooms.ts, agents.ts, bids.ts).
+let lastReport: SettlementReport | null = null;
+
+export function getLastSettlement(): SettlementReport | null {
+  return lastReport;
+}
+
 /**
  * Drives the room from OPEN to SETTLED.
  *
@@ -101,7 +112,7 @@ export async function revealAndSettle(): Promise<SettlementReport> {
   console.log(`[settlement] winner=${winnerAgentId ?? "none"} address=${winnerAddress ?? "none"}`);
   for (const tx of settlement.txIds) console.log(`[settlement] tx=${tx} ${explorer(tx)}`);
 
-  return {
+  const report: SettlementReport = {
     targetCents: TARGET_CENTS,
     winnerAddress,
     winnerAgentId,
@@ -111,6 +122,8 @@ export async function revealAndSettle(): Promise<SettlementReport> {
     settleTxIds: settlement.txIds,
     settleGroupId: settlement.groupId,
   };
+  lastReport = report;
+  return report;
 }
 
 /** Post-settlement view for the reveal page — safe to expose everything now. */

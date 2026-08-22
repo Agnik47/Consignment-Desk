@@ -6,12 +6,16 @@
   "workspaces": [
     "api",
     "agent",
-    "contracts"
+    "contracts",
+    "web"
   ],
   "scripts": {
     "dev:api": "npm run dev --workspace api",
     "dev:agent": "npm run start --workspace agent",
+    "dev:web": "npm run dev --workspace web",
     "test:contract": "npm run test --workspace contracts",
-    "compile:contract": "algokit compile py contracts/bidding_room/contract.py"
+    "compile:contract": "algokit compile py contracts/bidding_room/contract.py",
+    "deploy:testnet": "tsx --env-file=.env scripts/deploy-testnet.ts",
+    "test:e2e": "tsx --env-file=.env scripts/test-e2e.ts"
   }
 }

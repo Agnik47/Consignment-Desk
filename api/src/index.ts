@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { cors } from "hono/cors";
 import { getCookie, setCookie } from "hono/cookie";
 import { paymentMiddleware } from "@x402/hono";
 import { resourceServer, routes } from "./x402.js";
@@ -7,9 +8,19 @@ import { createSession, getSession } from "./sessions.js";
 import { ROOM_ID, PRODUCT_ID, getPublicView, getProduct } from "./rooms.js";
 import { enterRoom, EntryError } from "./entry.js";
 import { runAgent, AgentError, getPublicAgents } from "./agents.js";
-import { revealAndSettle, revealView, SettlementError } from "./settlement.js";
+import { revealAndSettle, revealView, getLastSettlement, SettlementError } from "./settlement.js";
 
 const app = new Hono();
+
+// The web app (Phase 9) runs on a different port, so this is a genuine
+// cross-origin caller, not localhost-to-itself — and it must send the
+// session cookie (credentials), so the origin can't be the CORS wildcard.
+app.use(
+  cors({
+    origin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
+    credentials: true,
+  }),
+);
 
 app.use(paymentMiddleware(routes, resourceServer));
 
@@ -158,6 +169,22 @@ app.post("/api/room/:id/settle", async (c) => {
     console.error("[settlement] unexpected error:", err instanceof Error ? err.message : "unknown error");
     return c.json({ error: "SETTLEMENT_FAILED", message: "Could not settle the room." }, 500);
   }
+});
+
+// The reveal page's data source. Separate from POST /settle (which performs
+// the action) because a browser that wasn't the one that called settle —
+// a phone that scanned earlier, a projector, a page refresh — still needs a
+// way to see the result. Read-only, safe to poll.
+app.get("/api/room/:id/reveal", (c) => {
+  const id = c.req.param("id");
+  if (id !== ROOM_ID) {
+    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
+  }
+  const report = getLastSettlement();
+  if (!report) {
+    return c.json({ error: "NOT_SETTLED", message: "This room has not been settled yet." }, 404);
+  }
+  return c.json(revealView(report));
 });
 
 const port = Number(process.env.API_PORT ?? 4021);

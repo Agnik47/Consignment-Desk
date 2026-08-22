@@ -227,8 +227,7 @@ agentic-bidding-room/
 │       ├── agents.ts       #   agent worker + state machine
 │       ├── contract.ts     #   deployed BiddingRoom client
 │       ├── settlement.ts   #   reveal + atomic settle (winner from chain)
-│       ├── bids.ts         #   local mirror of on-chain bids (nonces)
-│       └── sockets.ts      #   live agent status             (planned)
+│       └── bids.ts         #   local mirror of on-chain bids (nonces)
 ├── agent/                  # agent workers — the autonomous payers
 │   └── src/
 │       ├── brain.ts        #   pure valuation heuristic + personas
@@ -240,7 +239,13 @@ agentic-bidding-room/
 │   │   └── contract.py     #   commit-reveal, escrow, atomic settlement
 │   ├── deploy.ts           #   LocalNet deploy + room bootstrap
 │   └── bidding_room.test.ts
-├── web/                    # Next.js App Router — the room UI    (planned)
+├── web/                    # Next.js App Router — the room UI
+│   ├── lib/api.ts          #   typed fetch client for api/
+│   └── app/
+│       ├── page.tsx                  #   QR landing page
+│       ├── room/[id]/page.tsx        #   live room view (polls the API)
+│       └── room/[id]/reveal/page.tsx #   post-settlement reveal view
+├── scripts/                # deployRoom.ts, deploy-testnet.ts, test-e2e.ts
 ├── docs/                   # PRD · tech stack · agent rules · audit notes
 └── .env                    # never committed
 ```
@@ -300,6 +305,7 @@ algokit dispenser login && algokit dispenser fund   # or the faucet, manually
 ```bash
 npm run dev:api        # terminal 1 — starts the gated API on :4021
 npm run dev:agent      # terminal 2 — runs the 402 → pay → 200 hard-gate check
+npm run dev:web        # terminal 3 — the room UI on :3000 (QR / room / reveal)
 ```
 
 A passing run prints the settlement transaction id and a [Lora explorer](https://lora.algokit.io/testnet) link.
@@ -322,6 +328,12 @@ That shows the exact network, amount, asset and `payTo` the server is demanding 
 
 </details>
 
+**Or skip all of the above and run the whole thing in one command.** `npm run test:e2e` deploys its own fresh contract, starts its own server, and drives two agents through the entire loop — x402 entry, hint purchase, sealed on-chain bids, reveal, and atomic settlement — with no manual steps at all. Needs a funded `TREASURY_MNEMONIC` and `RESOURCE_SERVER_PRIVATE_KEY` in `.env` (same prerequisites as above); everything else it provisions itself.
+
+```bash
+npm run test:e2e
+```
+
 ---
 
 ## 📊 Build status — honestly
@@ -338,8 +350,8 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **5** | Agent workers — 3 personas, heuristic brain | 🟡 **Agentic hint purchase proven on-chain; one integration test pending funds** |
 | **6** | Sealed-bid escrow contract | ✅ **Done — 7/7 passing on LocalNet** |
 | **7** | Agent → contract integration | ✅ **Done — settled on testnet, verified on-chain** |
-| **8** | Full E2E harness (`npm run test:e2e`) | ⬜ Not started |
-| **9** | Room UI + reveal view | ⬜ Not started |
+| **8** | Full E2E harness (`npm run test:e2e`) | ✅ **Done — one full 12/12 green run, verified independently** |
+| **9** | Room UI + reveal view | 🟡 **Built and verified live — happy path pending funded re-run** |
 
 **What is genuinely proven right now:** a real agent-initiated x402 payment has settled on Algorand testnet, end to end — `402` → signed payment → facilitator verify/settle → `200`. Independently cross-checked against the public indexer (not just trusted from the client script): confirmed round, correct USDC transfer amount, and a `fee: 0` on the payer's transaction — empirically confirming the facilitator sponsors the fee-payer leg.
 
@@ -416,6 +428,40 @@ That's PRD **P0-6** met literally. Detail in [`docs/implementation-notes.md` §1
 Full detail, with the verified-correct call shapes: [`docs/implementation-notes.md`](docs/implementation-notes.md).
 
 </details>
+
+**And the whole thing runs itself — `npm run test:e2e` is a fully autonomous, one-command loop.** No manual deploy, no manual server start, no manual faucet run. It deploys a fresh contract instance, spawns its own short-lived API server, funds two agent wallets, drives both through real x402 payments and real on-chain sealed bids, waits out the bidding deadline, and settles — printing exactly the 12 steps below, each checked against the public indexer directly rather than trusted from the app's own report:
+
+```
+[1/12]   Create room                     PASS  app=769664508 https://lora.algokit.io/testnet/application/769664508
+[2/12]   Create participant wallets      PASS  agent-1, agent-2
+[3/12]   Fund participant wallets        PASS  verified real on-chain balances for both wallets
+[4/12]   x402 room entry                 PASS  real settled tx ids, cross-checked
+[5/12]   Assign agent                    PASS  agent-1, agent-2
+[6/12]   Agent reads product             PASS  target correctly hidden from the public view
+[7/12]   Agent buys hint via x402        PASS  agent-2 (balanced)
+[8/12]   Second agent skips hint         PASS  agent-1 (conservative)
+[9/12]   Submit sealed bids              PASS  both bids on-chain, escrow verified
+[10/12]  Reveal target                   PASS  target=$29, 2 bids revealed
+[11/12]  Determine winner                PASS  agent-2 (distance $0.30) — from the contract's return value
+[12/12]  On-chain settlement             PASS  winner holds item, treasury fee visible, settlement txs verified
+
+All 12 steps passed. Full loop verified end to end, no manual intervention.
+```
+
+> [!NOTE]
+> Two real bugs the harness itself surfaced, both fixed and re-verified rather than assumed away: a Windows-specific process-tree leak where the spawned server outlived the harness (`child.kill()` only reached the top of a `shell → npx → cmd.exe → node` chain — fixed by spawning `tsx`'s CLI directly as the node process, and now double-checked with a force-kill fallback); and a real Algorand cost that only shows up after repeated redeploys — creating the contract app permanently raises the deploying account's minimum balance by ~0.5 ALGO each time, with no cleanup path, so a demo-day reset script will need a dedicated, generously-funded wallet for repeated redeploys. Detail, including exact numbers, in [`docs/implementation-notes.md` §14](docs/implementation-notes.md).
+
+**And there's a real UI now.** `web/` (Next.js 16 App Router + Tailwind) ships the three pages AGENTS.md's Phase 9 asks for — a QR landing page, a live room view, and a reveal view — and none of it is a mockup: every page talks to the real API over real CORS with a real session cookie, polling `GET /api/room/:id` for live agent status (persona, confidence, and a distinctly-styled `buying_hint` chip for what the PRD calls "the money moment") and a new `GET /api/room/:id/reveal` for the settled result.
+
+Driven for real with a browser, not just read as code:
+
+- The QR page renders a working code pointing at `/room/demo-room` on whatever host it's actually being viewed from.
+- The Room page pulled live product data from the real API and rendered it correctly.
+- A **real failure** was exercised, not simulated: the same testnet-funding shortage affecting Phase 8 also blocked this room page's session creation, and it showed `Could not fund a new wallet. Please try again. (SESSION_FUNDING_FAILED)` instead of hanging or crashing — and the "Pay & Enter" button's `disabled` state was checked directly in the DOM, confirmed `true`, so no doomed request could fire.
+- The Reveal page correctly shows a "waiting for settlement" state against the real (currently un-settled) room.
+
+> [!NOTE]
+> Honest gap: the full happy path — pay, watch an agent autonomously buy a hint, see a populated reveal with a real winner — hasn't been exercised live yet, blocked by the exact same testnet ALGO shortage as Phase 8's second run (both draw from the same dispenser account). It'll be verified together once that's resolved. Detail in [`docs/implementation-notes.md` §15](docs/implementation-notes.md).
 
 ---
 
