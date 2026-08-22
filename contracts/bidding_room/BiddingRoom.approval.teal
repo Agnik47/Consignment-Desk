@@ -1,0 +1,1171 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 0 1 2 8 18446744073709551615
+    bytecblock "status" "usdc_asset" "seller" "bid_stake" "deadline" "bidder_count" "product_asset" "bid" "treasury" "fee_bps" "target_commitment" "idx" "winner" 0x151f7c75
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // bidding_room/contract.py:55
+    // self.seller = Account()
+    bytec_2 // "seller"
+    global ZeroAddress
+    app_global_put
+    // bidding_room/contract.py:56
+    // self.treasury = Account()
+    bytec 8 // "treasury"
+    global ZeroAddress
+    app_global_put
+    // bidding_room/contract.py:57
+    // self.usdc_asset = Asset()
+    bytec_1 // "usdc_asset"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:58
+    // self.product_asset = Asset()
+    bytec 6 // "product_asset"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:59
+    // self.bid_stake = UInt64()
+    bytec_3 // "bid_stake"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:60
+    // self.fee_bps = UInt64()
+    bytec 9 // "fee_bps"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:61
+    // self.target_commitment = Bytes()
+    bytec 10 // "target_commitment"
+    pushbytes 0x
+    app_global_put
+    // bidding_room/contract.py:62
+    // self.deadline = UInt64()
+    bytec 4 // "deadline"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:63
+    // self.status = UInt64(STATUS_CREATED)
+    bytec_0 // "status"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:64
+    // self.bidder_count = UInt64()
+    bytec 5 // "bidder_count"
+    intc_0 // 0
+    app_global_put
+    // bidding_room/contract.py:65
+    // self.winner = Account()
+    bytec 12 // "winner"
+    global ZeroAddress
+    app_global_put
+
+main_after_if_else@2:
+    // bidding_room/contract.py:40
+    // class BiddingRoom(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@15
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0xb418a64e 0xe385b111 0x1ef02453 0x4c969196 0xe83a87ab 0x4f677f3d // method "bootstrap(address,address,uint64,byte[],uint64,uint64,string)uint64", method "open_room(uint64)void", method "commit_bid(byte[],axfer)void", method "reveal_bid(address,uint64,byte[])void", method "noop()void", method "settle(uint64,byte[])address"
+    txna ApplicationArgs 0
+    match bootstrap open_room commit_bid reveal_bid main_noop_route@10 settle
+    err
+
+main_noop_route@10:
+    // bidding_room/contract.py:188
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+main___algopy_default_create@15:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// contract.BiddingRoom.bootstrap[routing]() -> void:
+bootstrap:
+    // bidding_room/contract.py:75
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 3
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    btoi
+    txna ApplicationArgs 4
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    txna ApplicationArgs 5
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 6
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 7
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    // bidding_room/contract.py:98
+    // assert self.status == STATUS_CREATED, "already bootstrapped"
+    intc_0 // 0
+    bytec_0 // "status"
+    app_global_get_ex
+    assert // check self.status exists
+    !
+    assert // already bootstrapped
+    // bidding_room/contract.py:100
+    // self.seller = seller
+    bytec_2 // "seller"
+    uncover 7
+    app_global_put
+    // bidding_room/contract.py:101
+    // self.treasury = treasury
+    bytec 8 // "treasury"
+    uncover 6
+    app_global_put
+    // bidding_room/contract.py:102
+    // self.usdc_asset = usdc_asset
+    bytec_1 // "usdc_asset"
+    dig 5
+    app_global_put
+    // bidding_room/contract.py:103
+    // self.bid_stake = bid_stake.native
+    uncover 2
+    btoi
+    bytec_3 // "bid_stake"
+    swap
+    app_global_put
+    // bidding_room/contract.py:104
+    // self.fee_bps = fee_bps.native
+    swap
+    btoi
+    bytec 9 // "fee_bps"
+    swap
+    app_global_put
+    // bidding_room/contract.py:105
+    // self.target_commitment = target_commitment.native
+    swap
+    extract 2 0
+    bytec 10 // "target_commitment"
+    swap
+    app_global_put
+    // bidding_room/contract.py:107-119
+    // # Opt this app account into USDC so it can hold bid escrow.
+    // # Inner transactions default to fee=0 (see algopy-stubs — it's a
+    // # Python-level default, not "let the AVM auto-compute one") and are
+    // # paid from THIS app's own ALGO balance, not pooled from the caller's
+    // # transaction unless explicitly arranged — so every one of them needs
+    // # an explicit real fee, funded by the balance bootstrap's caller
+    // # sent via fundAppAccount before this call.
+    // itxn.AssetTransfer(
+    //     xfer_asset=usdc_asset,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:118
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:116
+    // asset_receiver=Global.current_application_address,
+    global CurrentApplicationAddress
+    // bidding_room/contract.py:117
+    // asset_amount=0,
+    intc_0 // 0
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    uncover 2
+    itxn_field XferAsset
+    // bidding_room/contract.py:107-114
+    // # Opt this app account into USDC so it can hold bid escrow.
+    // # Inner transactions default to fee=0 (see algopy-stubs — it's a
+    // # Python-level default, not "let the AVM auto-compute one") and are
+    // # paid from THIS app's own ALGO balance, not pooled from the caller's
+    // # transaction unless explicitly arranged — so every one of them needs
+    // # an explicit real fee, funded by the balance bootstrap's caller
+    // # sent via fundAppAccount before this call.
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:107-119
+    // # Opt this app account into USDC so it can hold bid escrow.
+    // # Inner transactions default to fee=0 (see algopy-stubs — it's a
+    // # Python-level default, not "let the AVM auto-compute one") and are
+    // # paid from THIS app's own ALGO balance, not pooled from the caller's
+    // # transaction unless explicitly arranged — so every one of them needs
+    // # an explicit real fee, funded by the balance bootstrap's caller
+    // # sent via fundAppAccount before this call.
+    // itxn.AssetTransfer(
+    //     xfer_asset=usdc_asset,
+    //     asset_receiver=Global.current_application_address,
+    //     asset_amount=0,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+    // bidding_room/contract.py:121-129
+    // created = itxn.AssetConfig(
+    //     total=1,
+    //     decimals=0,
+    //     unit_name="BIDITEM",
+    //     asset_name=product_name.native,
+    //     manager=Global.current_application_address,
+    //     reserve=Global.current_application_address,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:128
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:125
+    // asset_name=product_name.native,
+    swap
+    extract 2 0
+    // bidding_room/contract.py:126
+    // manager=Global.current_application_address,
+    global CurrentApplicationAddress
+    // bidding_room/contract.py:127
+    // reserve=Global.current_application_address,
+    dup
+    itxn_field ConfigAssetReserve
+    itxn_field ConfigAssetManager
+    itxn_field ConfigAssetName
+    // bidding_room/contract.py:124
+    // unit_name="BIDITEM",
+    pushbytes "BIDITEM"
+    itxn_field ConfigAssetUnitName
+    // bidding_room/contract.py:123
+    // decimals=0,
+    intc_0 // 0
+    itxn_field ConfigAssetDecimals
+    // bidding_room/contract.py:122
+    // total=1,
+    intc_1 // 1
+    itxn_field ConfigAssetTotal
+    // bidding_room/contract.py:121
+    // created = itxn.AssetConfig(
+    pushint 3 // acfg
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:121-129
+    // created = itxn.AssetConfig(
+    //     total=1,
+    //     decimals=0,
+    //     unit_name="BIDITEM",
+    //     asset_name=product_name.native,
+    //     manager=Global.current_application_address,
+    //     reserve=Global.current_application_address,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+    itxn CreatedAssetID
+    // bidding_room/contract.py:130
+    // self.product_asset = created.created_asset
+    bytec 6 // "product_asset"
+    dig 1
+    app_global_put
+    // bidding_room/contract.py:75
+    // @arc4.abimethod
+    itob
+    bytec 13 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_1 // 1
+    return
+
+
+// contract.BiddingRoom.open_room[routing]() -> void:
+open_room:
+    // bidding_room/contract.py:134
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // bidding_room/contract.py:136
+    // assert self.status == STATUS_CREATED, "room already open or settled"
+    intc_0 // 0
+    bytec_0 // "status"
+    app_global_get_ex
+    assert // check self.status exists
+    !
+    assert // room already open or settled
+    // bidding_room/contract.py:137
+    // assert Txn.sender == self.seller, "only the seller can open the room"
+    txn Sender
+    intc_0 // 0
+    bytec_2 // "seller"
+    app_global_get_ex
+    assert // check self.seller exists
+    ==
+    assert // only the seller can open the room
+    // bidding_room/contract.py:138
+    // assert deadline.native > Global.latest_timestamp, "deadline must be in the future"
+    btoi
+    dup
+    global LatestTimestamp
+    >
+    assert // deadline must be in the future
+    // bidding_room/contract.py:139
+    // self.deadline = deadline.native
+    bytec 4 // "deadline"
+    swap
+    app_global_put
+    // bidding_room/contract.py:140
+    // self.status = UInt64(STATUS_OPEN)
+    bytec_0 // "status"
+    intc_1 // 1
+    app_global_put
+    // bidding_room/contract.py:134
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// contract.BiddingRoom.commit_bid[routing]() -> void:
+commit_bid:
+    // bidding_room/contract.py:144
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    txn GroupIndex
+    intc_1 // 1
+    -
+    dup
+    gtxns TypeEnum
+    pushint 4 // axfer
+    ==
+    assert // transaction type is axfer
+    // bidding_room/contract.py:147
+    // assert self.status == STATUS_OPEN, "room is not open for bids"
+    intc_0 // 0
+    bytec_0 // "status"
+    app_global_get_ex
+    assert // check self.status exists
+    intc_1 // 1
+    ==
+    assert // room is not open for bids
+    // bidding_room/contract.py:148
+    // assert Global.latest_timestamp <= self.deadline, "bidding deadline has passed"
+    global LatestTimestamp
+    intc_0 // 0
+    bytec 4 // "deadline"
+    app_global_get_ex
+    assert // check self.deadline exists
+    <=
+    assert // bidding deadline has passed
+    // bidding_room/contract.py:149
+    // assert Txn.sender not in self.bids, "this account has already bid"
+    bytec 7 // "bid"
+    txn Sender
+    concat
+    box_len
+    bury 1
+    !
+    assert // this account has already bid
+    // bidding_room/contract.py:151
+    // assert stake.asset_receiver == Global.current_application_address, "stake must be paid to this app"
+    dup
+    gtxns AssetReceiver
+    global CurrentApplicationAddress
+    ==
+    assert // stake must be paid to this app
+    // bidding_room/contract.py:152
+    // assert stake.xfer_asset == self.usdc_asset, "stake must be in the room's USDC asset"
+    dup
+    gtxns XferAsset
+    intc_0 // 0
+    bytec_1 // "usdc_asset"
+    app_global_get_ex
+    assert // check self.usdc_asset exists
+    ==
+    assert // stake must be in the room's USDC asset
+    // bidding_room/contract.py:153
+    // assert stake.sender == Txn.sender, "stake must come from the bidder"
+    dup
+    gtxns Sender
+    txn Sender
+    ==
+    assert // stake must come from the bidder
+    // bidding_room/contract.py:154
+    // assert stake.asset_amount == self.bid_stake, "stake does not match the required bid amount"
+    gtxns AssetAmount
+    intc_0 // 0
+    bytec_3 // "bid_stake"
+    app_global_get_ex
+    assert // check self.bid_stake exists
+    ==
+    assert // stake does not match the required bid amount
+    // bidding_room/contract.py:156
+    // self.bidder_by_index[self.bidder_count] = Txn.sender
+    txn Sender
+    intc_0 // 0
+    bytec 5 // "bidder_count"
+    app_global_get_ex
+    assert // check self.bidder_count exists
+    dup
+    itob
+    bytec 11 // "idx"
+    swap
+    concat
+    uncover 2
+    box_put
+    // bidding_room/contract.py:157
+    // self.bidder_count += 1
+    intc_1 // 1
+    +
+    bytec 5 // "bidder_count"
+    swap
+    app_global_put
+    // bidding_room/contract.py:162
+    // submitted_at=arc4.UInt64(Global.latest_timestamp),
+    global LatestTimestamp
+    itob
+    // bidding_room/contract.py:158-163
+    // self.bids[Txn.sender] = BidRecord(
+    //     commitment=commitment.copy(),
+    //     revealed=arc4.Bool(False),  # noqa: FBT003
+    //     guess=arc4.UInt64(0),
+    //     submitted_at=arc4.UInt64(Global.latest_timestamp),
+    // )
+    pushbytes 0x0013000000000000000000
+    swap
+    concat
+    swap
+    concat
+    // bidding_room/contract.py:158
+    // self.bids[Txn.sender] = BidRecord(
+    bytec 7 // "bid"
+    txn Sender
+    concat
+    // bidding_room/contract.py:158-163
+    // self.bids[Txn.sender] = BidRecord(
+    //     commitment=commitment.copy(),
+    //     revealed=arc4.Bool(False),  # noqa: FBT003
+    //     guess=arc4.UInt64(0),
+    //     submitted_at=arc4.UInt64(Global.latest_timestamp),
+    // )
+    dup
+    box_del
+    pop
+    swap
+    box_put
+    // bidding_room/contract.py:144
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// contract.BiddingRoom.reveal_bid[routing]() -> void:
+reveal_bid:
+    // bidding_room/contract.py:165
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    pushint 32
+    ==
+    assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 3
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    // bidding_room/contract.py:176
+    // assert self.status == STATUS_OPEN, "room is not in a revealable state"
+    intc_0 // 0
+    bytec_0 // "status"
+    app_global_get_ex
+    assert // check self.status exists
+    intc_1 // 1
+    ==
+    assert // room is not in a revealable state
+    // bidding_room/contract.py:177
+    // assert Global.latest_timestamp > self.deadline, "cannot reveal before the deadline"
+    global LatestTimestamp
+    intc_0 // 0
+    bytec 4 // "deadline"
+    app_global_get_ex
+    assert // check self.deadline exists
+    >
+    assert // cannot reveal before the deadline
+    // bidding_room/contract.py:178
+    // assert bidder in self.bids, "no bid on file for this account"
+    bytec 7 // "bid"
+    uncover 3
+    concat
+    dup
+    box_len
+    bury 1
+    assert // no bid on file for this account
+    // bidding_room/contract.py:180
+    // record = self.bids[bidder].copy()
+    dup
+    box_get
+    pop
+    swap
+    // bidding_room/contract.py:180-181
+    // record = self.bids[bidder].copy()
+    // assert not record.revealed.native, "this bid has already been revealed"
+    dup
+    intc_2 // 2
+    intc_1 // 1
+    box_extract // on error: index out of bounds
+    intc_0 // 0
+    getbit
+    // bidding_room/contract.py:181
+    // assert not record.revealed.native, "this bid has already been revealed"
+    pushbytes 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    !
+    assert // this bid has already been revealed
+    // bidding_room/contract.py:182
+    // assert _sha256_commitment(guess.native, nonce.native) == record.commitment.native, "guess/nonce does not match the commitment"
+    dig 3
+    btoi
+    uncover 3
+    extract 2 0
+    // bidding_room/contract.py:291
+    // return op.sha256(op.itob(value) + nonce)
+    swap
+    itob
+    swap
+    concat
+    sha256
+    // bidding_room/contract.py:182
+    // assert _sha256_commitment(guess.native, nonce.native) == record.commitment.native, "guess/nonce does not match the commitment"
+    dig 1
+    pushint 19
+    intc_2 // 2
+    box_extract
+    btoi
+    intc_2 // 2
+    +
+    dig 2
+    pushint 19
+    uncover 2
+    box_extract
+    extract 2 0
+    ==
+    assert // guess/nonce does not match the commitment
+    // bidding_room/contract.py:184
+    // record.revealed = arc4.Bool(True)  # noqa: FBT003
+    swap
+    pushint 16
+    intc_1 // 1
+    setbit
+    // bidding_room/contract.py:185
+    // record.guess = guess
+    uncover 2
+    replace2 3
+    // bidding_room/contract.py:186
+    // self.bids[bidder] = record.copy()
+    dig 1
+    box_del
+    pop
+    box_put
+    // bidding_room/contract.py:165
+    // @arc4.abimethod
+    intc_1 // 1
+    return
+
+
+// contract.BiddingRoom.settle[routing]() -> void:
+settle:
+    intc_0 // 0
+    dup
+    pushbytes ""
+    dupn 2
+    // bidding_room/contract.py:204
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 2
+    dup
+    intc_0 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_2 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    // bidding_room/contract.py:216
+    // assert self.status == STATUS_OPEN, "room is not open"
+    intc_0 // 0
+    bytec_0 // "status"
+    app_global_get_ex
+    assert // check self.status exists
+    intc_1 // 1
+    ==
+    assert // room is not open
+    // bidding_room/contract.py:217
+    // assert Global.latest_timestamp > self.deadline, "cannot settle before the deadline"
+    global LatestTimestamp
+    intc_0 // 0
+    bytec 4 // "deadline"
+    app_global_get_ex
+    assert // check self.deadline exists
+    >
+    assert // cannot settle before the deadline
+    // bidding_room/contract.py:218
+    // assert _sha256_commitment(target.native, target_nonce.native) == self.target_commitment, "target/nonce does not match the room's commitment"
+    swap
+    btoi
+    dup
+    uncover 2
+    extract 2 0
+    // bidding_room/contract.py:291
+    // return op.sha256(op.itob(value) + nonce)
+    swap
+    itob
+    swap
+    concat
+    sha256
+    // bidding_room/contract.py:218
+    // assert _sha256_commitment(target.native, target_nonce.native) == self.target_commitment, "target/nonce does not match the room's commitment"
+    intc_0 // 0
+    bytec 10 // "target_commitment"
+    app_global_get_ex
+    assert // check self.target_commitment exists
+    ==
+    assert // target/nonce does not match the room's commitment
+    // bidding_room/contract.py:220
+    // winner = Account()
+    global ZeroAddress
+    swap
+    // bidding_room/contract.py:221
+    // best_distance = UInt64(2**64 - 1)
+    intc 4 // 18446744073709551615
+    swap
+    // bidding_room/contract.py:222
+    // best_submitted_at = UInt64(2**64 - 1)
+    intc 4 // 18446744073709551615
+    swap
+    // bidding_room/contract.py:223
+    // has_winner = False
+    intc_0 // 0
+    swap
+    // bidding_room/contract.py:225
+    // for i in urange(self.bidder_count):
+    intc_0 // 0
+    bytec 5 // "bidder_count"
+    app_global_get_ex
+    assert // check self.bidder_count exists
+    intc_0 // 0
+
+settle_for_header@2:
+    // bidding_room/contract.py:225
+    // for i in urange(self.bidder_count):
+    dup
+    dig 2
+    <
+    bz settle_after_for@15
+    // bidding_room/contract.py:226
+    // addr = self.bidder_by_index[i]
+    dup
+    itob
+    bytec 11 // "idx"
+    swap
+    concat
+    box_get
+    swap
+    dup
+    cover 2
+    bury 14
+    assert // check self.bidder_by_index entry exists
+    // bidding_room/contract.py:227
+    // record = self.bids[addr].copy()
+    bytec 7 // "bid"
+    swap
+    concat
+    dup
+    bury 12
+    // bidding_room/contract.py:227-228
+    // record = self.bids[addr].copy()
+    // if not record.revealed.native:
+    intc_2 // 2
+    intc_1 // 1
+    box_extract // on error: index out of bounds
+    intc_0 // 0
+    getbit
+    // bidding_room/contract.py:228
+    // if not record.revealed.native:
+    pushbytes 0x00
+    intc_0 // 0
+    uncover 2
+    setbit
+    intc_0 // 0
+    getbit
+    bz settle_for_footer@14
+    // bidding_room/contract.py:230
+    // distance = _abs_diff(record.guess.native, target.native)
+    dig 10
+    pushint 3
+    intc_3 // 8
+    box_extract // on error: index out of bounds
+    btoi
+    dup
+    // bidding_room/contract.py:296
+    // if a > b:
+    dig 4
+    >
+    bz settle_after_if_else@35
+    // bidding_room/contract.py:297
+    // return a - b
+    dig 3
+    -
+    bury 10
+
+settle_after_inlined_contract._abs_diff@36:
+    // bidding_room/contract.py:231
+    // submitted_at = record.submitted_at.native
+    dig 10
+    pushint 11
+    intc_3 // 8
+    box_extract // on error: index out of bounds
+    btoi
+    bury 8
+    // bidding_room/contract.py:232
+    // is_better = (not has_winner) or (distance < best_distance) or (
+    dig 3
+    bz settle_bool_true@9
+    dig 9
+    dig 6
+    <
+    // bidding_room/contract.py:232-234
+    // is_better = (not has_winner) or (distance < best_distance) or (
+    //     distance == best_distance and submitted_at < best_submitted_at
+    // )
+    bnz settle_bool_true@9
+    // bidding_room/contract.py:233
+    // distance == best_distance and submitted_at < best_submitted_at
+    dig 9
+    dig 6
+    ==
+    bz settle_bool_false@10
+    dig 7
+    dig 5
+    <
+    bz settle_bool_false@10
+
+settle_bool_true@9:
+    intc_1 // 1
+
+settle_bool_merge@11:
+    // bidding_room/contract.py:235
+    // if is_better:
+    bz settle_for_footer@14
+    // bidding_room/contract.py:239
+    // has_winner = True
+    intc_1 // 1
+    bury 4
+    dig 11
+    bury 7
+    dig 7
+    bury 5
+    dig 9
+    bury 6
+
+settle_for_footer@14:
+    // bidding_room/contract.py:225
+    // for i in urange(self.bidder_count):
+    intc_1 // 1
+    +
+    b settle_for_header@2
+
+settle_bool_false@10:
+    intc_0 // 0
+    b settle_bool_merge@11
+
+settle_after_if_else@35:
+    // bidding_room/contract.py:298
+    // return b - a
+    dig 3
+    swap
+    -
+    bury 10
+    // bidding_room/contract.py:230
+    // distance = _abs_diff(record.guess.native, target.native)
+    b settle_after_inlined_contract._abs_diff@36
+
+settle_after_for@15:
+    popn 3
+    // bidding_room/contract.py:241
+    // if has_winner:
+    dup
+    bz settle_else_body@22
+    // bidding_room/contract.py:242
+    // fee_amount = (self.bid_stake * self.fee_bps) // UInt64(10_000)
+    intc_0 // 0
+    bytec_3 // "bid_stake"
+    app_global_get_ex
+    assert // check self.bid_stake exists
+    intc_0 // 0
+    bytec 9 // "fee_bps"
+    app_global_get_ex
+    assert // check self.fee_bps exists
+    dig 1
+    *
+    pushint 10000
+    /
+    dup
+    bury 8
+    // bidding_room/contract.py:243
+    // seller_amount = self.bid_stake - fee_amount
+    swap
+    dig 1
+    -
+    // bidding_room/contract.py:245-250
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=self.seller,
+    //     asset_amount=seller_amount,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:249
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:246
+    // xfer_asset=self.usdc_asset,
+    intc_0 // 0
+    bytec_1 // "usdc_asset"
+    app_global_get_ex
+    assert // check self.usdc_asset exists
+    // bidding_room/contract.py:247
+    // asset_receiver=self.seller,
+    intc_0 // 0
+    bytec_2 // "seller"
+    app_global_get_ex
+    assert // check self.seller exists
+    uncover 3
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // bidding_room/contract.py:245
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:245-250
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=self.seller,
+    //     asset_amount=seller_amount,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+    // bidding_room/contract.py:251
+    // if fee_amount > 0:
+    bz settle_after_if_else@20
+    // bidding_room/contract.py:252-257
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=self.treasury,
+    //     asset_amount=fee_amount,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:256
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:253
+    // xfer_asset=self.usdc_asset,
+    intc_0 // 0
+    bytec_1 // "usdc_asset"
+    app_global_get_ex
+    assert // check self.usdc_asset exists
+    // bidding_room/contract.py:254
+    // asset_receiver=self.treasury,
+    intc_0 // 0
+    bytec 8 // "treasury"
+    app_global_get_ex
+    assert // check self.treasury exists
+    dig 8
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // bidding_room/contract.py:252
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:252-257
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=self.treasury,
+    //     asset_amount=fee_amount,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+
+settle_after_if_else@20:
+    // bidding_room/contract.py:258-263
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.product_asset,
+    //     asset_receiver=winner,
+    //     asset_amount=1,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:262
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:259
+    // xfer_asset=self.product_asset,
+    intc_0 // 0
+    bytec 6 // "product_asset"
+    app_global_get_ex
+    assert // check self.product_asset exists
+    // bidding_room/contract.py:261
+    // asset_amount=1,
+    intc_1 // 1
+    itxn_field AssetAmount
+    dig 5
+    dup
+    cover 2
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // bidding_room/contract.py:258
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    swap
+    itxn_field Fee
+    // bidding_room/contract.py:258-263
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.product_asset,
+    //     asset_receiver=winner,
+    //     asset_amount=1,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+    // bidding_room/contract.py:264
+    // self.winner = winner
+    bytec 12 // "winner"
+    swap
+    app_global_put
+
+settle_after_if_else@24:
+    // bidding_room/contract.py:274
+    // for i in urange(self.bidder_count):
+    intc_0 // 0
+    bytec 5 // "bidder_count"
+    app_global_get_ex
+    assert // check self.bidder_count exists
+    intc_0 // 0
+
+settle_for_header@25:
+    // bidding_room/contract.py:274
+    // for i in urange(self.bidder_count):
+    dup
+    dig 2
+    <
+    bz settle_after_for@32
+    // bidding_room/contract.py:275
+    // addr = self.bidder_by_index[i]
+    dup
+    itob
+    bytec 11 // "idx"
+    swap
+    concat
+    box_get
+    swap
+    dup
+    cover 2
+    bury 13
+    assert // check self.bidder_by_index entry exists
+    // bidding_room/contract.py:276
+    // if addr == winner and has_winner:
+    dig 6
+    ==
+    bz settle_after_if_else@29
+    dig 2
+    bnz settle_for_footer@31
+
+settle_after_if_else@29:
+    // bidding_room/contract.py:278-283
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=addr,
+    //     asset_amount=self.bid_stake,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:282
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:279
+    // xfer_asset=self.usdc_asset,
+    intc_0 // 0
+    bytec_1 // "usdc_asset"
+    app_global_get_ex
+    assert // check self.usdc_asset exists
+    // bidding_room/contract.py:281
+    // asset_amount=self.bid_stake,
+    intc_0 // 0
+    bytec_3 // "bid_stake"
+    app_global_get_ex
+    assert // check self.bid_stake exists
+    itxn_field AssetAmount
+    dig 12
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // bidding_room/contract.py:278
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:278-283
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.usdc_asset,
+    //     asset_receiver=addr,
+    //     asset_amount=self.bid_stake,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+
+settle_for_footer@31:
+    // bidding_room/contract.py:274
+    // for i in urange(self.bidder_count):
+    intc_1 // 1
+    +
+    b settle_for_header@25
+
+settle_after_for@32:
+    // bidding_room/contract.py:285
+    // self.status = UInt64(STATUS_SETTLED)
+    bytec_0 // "status"
+    intc_2 // 2
+    app_global_put
+    // bidding_room/contract.py:204
+    // @arc4.abimethod
+    bytec 13 // 0x151f7c75
+    dig 6
+    concat
+    log
+    intc_1 // 1
+    return
+
+settle_else_body@22:
+    // bidding_room/contract.py:266-272
+    // # No revealed bids at all — nobody won; the item stays unsold.
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.product_asset,
+    //     asset_receiver=self.seller,
+    //     asset_amount=1,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_begin
+    // bidding_room/contract.py:271
+    // fee=Global.min_txn_fee,
+    global MinTxnFee
+    // bidding_room/contract.py:268
+    // xfer_asset=self.product_asset,
+    intc_0 // 0
+    bytec 6 // "product_asset"
+    app_global_get_ex
+    assert // check self.product_asset exists
+    // bidding_room/contract.py:269
+    // asset_receiver=self.seller,
+    intc_0 // 0
+    bytec_2 // "seller"
+    app_global_get_ex
+    assert // check self.seller exists
+    // bidding_room/contract.py:270
+    // asset_amount=1,
+    intc_1 // 1
+    itxn_field AssetAmount
+    itxn_field AssetReceiver
+    itxn_field XferAsset
+    // bidding_room/contract.py:266-267
+    // # No revealed bids at all — nobody won; the item stays unsold.
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    itxn_field Fee
+    // bidding_room/contract.py:266-272
+    // # No revealed bids at all — nobody won; the item stays unsold.
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.product_asset,
+    //     asset_receiver=self.seller,
+    //     asset_amount=1,
+    //     fee=Global.min_txn_fee,
+    // ).submit()
+    itxn_submit
+    b settle_after_if_else@24

@@ -279,3 +279,58 @@ Two things worth recording:
 - `agent/` — **22/22 passing** (pure brain, no network, ~1.2s), including four tests that guard the demo story itself.
 - `api/` — **36/36 unit tests passing** (~2.8s), including the sealed-bid whitelist.
 - `api/` integration — `chain` and `entry` suites **passed**. `agents.integration.test.ts` is written and typechecks, but **has not completed a green run**: the dispenser's daily cap was exhausted before it could. The behaviour it asserts *was* verified manually with the on-chain evidence above; the automated version is pending fresh testnet funds. Recorded as not-yet-green rather than counted as passing.
+
+---
+
+## 12. Phase 6 — Smart Contract findings (22 Aug 2026)
+
+`contracts/bidding_room/contract.py` — a purpose-built Algorand Python (algopy) contract implementing sealed-bid, closest-guess-wins escrow with atomic settlement. **7/7 tests passing against real LocalNet**, verified stable across two consecutive runs.
+
+### Decision: written from scratch, not forked from the marketplace example
+
+Phase 0's audit had already found the `digital-marketplace-smart-contract` scaffold has **no deadline, no sealed bid, no commit-reveal, and manual (non-atomic) settlement** — its core mechanic is "highest bid, seller manually accepts", which is structurally the opposite of what this room needs. Retrofitting would have meant deleting most of it. Written fresh using the same idiomatic patterns (BoxMap escrow, inner-transaction settlement) but with the actual required semantics. This diverges from the PRD's literal "forked from…" wording — recorded here rather than glossed over.
+
+### Toolchain: a real version trap
+
+`pip install algorand-python` gives the **stubs** (4.0.0) but `pip install puya` gives a compiler pinned at **0.6.0** — years apart. Compiling with that pair produces a wall of nonsense errors (`not a subclass of puyapy.Contract`, `Unsupported function decorator "algopy._hints.subroutine"`, `FATAL Unhandled puyapy name`) that all look like code bugs and are not. The fix is to let AlgoKit manage the compiler: install `pipx`, then `algokit compile py …`, which fetches the matched **puyapy 5.10.0**. Everything compiled first try afterward. Anyone debugging "impossible" algopy errors should check `pip show puya` against `algorand-python` before touching the contract.
+
+### Contract surface
+
+| Method | Purpose |
+|---|---|
+| `bootstrap` | Opts the app into USDC, mints a 1-unit product ASA it holds in escrow, records room terms |
+| `open_room` | Seller-only; sets the bidding deadline |
+| `commit_bid` | Escrows a fixed stake against `sha256(guess‖nonce)`; one per account, pre-deadline only |
+| `reveal_bid` | Verifies a commitment post-deadline and records the guess in the clear |
+| `settle` | Verifies the room's target commitment, picks the winner, pays out, refunds losers — atomically |
+| `noop` | Carries resource references only (see below) |
+
+**On "sealed":** every bidder escrows the *same* fixed stake regardless of guess. The guess is hidden; the payment amount is not, and could not be — Algorand's ledger is public. This is demo-grade commit-reveal exactly as AGENTS.md Rule 6 requires us to say out loud, not research-grade bid privacy.
+
+**Contract-level lifecycle is 3 states** (`CREATED → OPEN → SETTLED`), not the backend's 5. `BIDDING_CLOSED` and `REVEALING` are display states with no separate on-chain transition, because reveal and settle happen in the same atomic moment per PRD P0-6.
+
+### Four real bugs/limits found by running it, not by reading it
+
+1. **Inner-transaction fees are not automatic.** `fee` on an algopy inner transaction defaults to `0` — a Python default, not "let the AVM figure it out" — so every `itxn` failed with `group fee 0.0A too small`. My first fix (omitting `fee=`) changed nothing, because omission *is* the zero default. Correct fix: set `fee=Global.min_txn_fee` explicitly on all seven inner transactions, paid from the app's own funded balance.
+
+2. **You cannot push an ASA to an account that hasn't opted in.** `settle()` failed with `receiver error: must optin` because the winner had no product-asset slot — and separately because the **treasury had never opted into USDC**, so the fee transfer failed. This is a genuine product constraint, not a test artifact: *a bidder must opt into the product asset before settlement in order to be eligible to win*, costing them 0.1 ALGO of min-balance. Phase 7 must make agents opt in at bid time. `deployRoom` now opts the treasury into USDC and the seller into the product asset as part of correct room setup.
+
+3. **`settle()` hits the AVM's resource-reference cap at ~3 bidders.** It touches an account + two boxes per bidder, plus seller/treasury/winner and two assets — beyond what a single app call may reference (`No more transactions below reference limit`). Solved with the standard padding pattern: a `noop` ABI method grouped alongside `settle`, raising the group's combined budget **while keeping settlement atomic** (splitting it would have broken P0-6). This is a real scaling ceiling — worth knowing that a much larger room would need pull-based refunds (losers claim) rather than push-based.
+
+4. **`waitUntilTimestamp` polls passively and hangs on LocalNet.** It never generates blocks, and LocalNet dev mode only cuts a block when a transaction arrives — so with no other traffic it waits forever (every test using it timed out, even for a 2-second deadline). Replaced with an active loop that sends a self-payment per iteration to force blocks.
+
+### LocalNet chain time — the subtlest problem here
+
+The contract compares against `Global.latest_timestamp`, the last **committed block's** timestamp. Three consequences, each of which cost a debugging round:
+
+- `setTimeout` advances nothing. Wall-clock sleeping does not move chain time.
+- A fresh LocalNet can run **~70 seconds behind wall clock**, and each block leaps forward to catch up — one transaction was measured advancing chain time **~25s**. So a "3 seconds from now" deadline is blown past by the very first setup transaction, while a wall-clock-derived deadline sits unreachably far in the chain's future.
+- Once caught up, block timestamps track wall clock, so advancing N seconds genuinely costs N seconds — a 600s deadline meant a 600s wait (which is exactly what one early run did).
+
+Resolved with `syncChainToWallClock()` at the end of `deployRoom`: drag chain time up to wall clock first, after which deadlines mean what they say and tests are both fast and predictable.
+
+### Tests (`npm run test:contract`, ~130s, real LocalNet — free and not rate-limited, unlike testnet)
+
+Covers every behaviour AGENTS.md Phase 6/7 lists: normal winner (with balances checked on all four sides — winner holds the item, winner's stake consumed, treasury holds the fee, losers refunded to net-zero), duplicate bid rejected, late bid rejected, reveal with a mismatched guess/nonce rejected, settle with a target that doesn't match the room commitment rejected, no-bids settlement returning the item to the seller, and the earliest-commit tie-break.
+
+**Not yet done (Phase 7):** this contract is not wired to the backend. `api/src/bids.ts` still holds bids in memory, which AGENTS.md §6 explicitly forbids as the authoritative settlement record. Phase 7 replaces it — agents must opt into the product asset, commit real on-chain bids, and the winner must come from `settle()`'s return value rather than any backend calculation. Deploying to **testnet** also still pending (LocalNet only so far).

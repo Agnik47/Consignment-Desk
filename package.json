@@ -5,10 +5,13 @@
   "description": "x402 Global Challenge PreHack — Agentic Bidding Room",
   "workspaces": [
     "api",
-    "agent"
+    "agent",
+    "contracts"
   ],
   "scripts": {
     "dev:api": "npm run dev --workspace api",
-    "dev:agent": "npm run start --workspace agent"
+    "dev:agent": "npm run start --workspace agent",
+    "test:contract": "npm run test --workspace contracts",
+    "compile:contract": "algokit compile py contracts/bidding_room/contract.py"
   }
 }

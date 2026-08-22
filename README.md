@@ -233,7 +233,11 @@ agentic-bidding-room/
 │       ├── test-payment.ts #   Phase 1 hard-gate E2E check
 │       ├── keygen.ts       #   testnet keypair utility
 │       └── optin.ts        #   ASA opt-in utility
-├── contracts/              # Algorand Python — sealed-bid escrow (planned)
+├── contracts/              # Algorand Python — sealed-bid escrow
+│   ├── bidding_room/
+│   │   └── contract.py     #   commit-reveal, escrow, atomic settlement
+│   ├── deploy.ts           #   LocalNet deploy + room bootstrap
+│   └── bidding_room.test.ts
 ├── web/                    # Next.js App Router — the room UI    (planned)
 ├── docs/                   # PRD · tech stack · agent rules · audit notes
 └── .env                    # never committed
@@ -330,7 +334,7 @@ This is a hackathon build in progress. Here's exactly where it stands. Nothing b
 | **3** | Room + product state machine | ✅ **Done — verified live via `GET /api/room/:id`** |
 | **4** | x402-gated room entry | ✅ **Done — real payment settled, race condition tested live** |
 | **5** | Agent workers — 3 personas, heuristic brain | 🟡 **Agentic hint purchase proven on-chain; one integration test pending funds** |
-| **6** | Sealed-bid escrow contract | ⬜ Not started |
+| **6** | Sealed-bid escrow contract | ✅ **Done — 7/7 passing on LocalNet** |
 | **7** | Agent → contract integration | ⬜ Not started |
 | **8** | Full E2E harness (`npm run test:e2e`) | ⬜ Not started |
 | **9** | Room UI + reveal view | ⬜ Not started |
@@ -364,6 +368,17 @@ Bids are genuinely sealed: the public room view was probed for every bid amount,
 
 > [!NOTE]
 > One honest gap: `agents.integration.test.ts` (the automated version of the run above) is written and typechecks but **has not completed a green run** — the AlgoKit testnet dispenser's daily cap was exhausted partway through, with a real algod `balance below min` error. That's an external funding limit, not a code defect, and the behaviour it asserts is the on-chain evidence above. Recorded as not-yet-green rather than counted as passing. Detail in [`docs/implementation-notes.md` §11](docs/implementation-notes.md).
+
+**And the escrow contract is real too.** `contracts/bidding_room/contract.py` implements sealed-bid commit-reveal, closest-guess-wins, earliest-commit tie-break, and atomic settlement — **7/7 tests passing against real LocalNet**, stable across consecutive runs. A winning run verifies all four sides on-chain: the winner holds the product ASA, the winner's stake was consumed (not refunded), the treasury holds the platform fee, and every loser is back to net-zero.
+
+Three real Algorand constraints surfaced only by running it, each documented in [`docs/implementation-notes.md` §12](docs/implementation-notes.md):
+
+- **You cannot push an asset to someone who hasn't opted in.** A bidder must opt into the product asset *before* settlement to be eligible to win — a genuine 0.1 ALGO cost of entry, not a test artifact.
+- **`settle()` hits the AVM's resource-reference ceiling at ~3 bidders.** Solved with grouped no-op padding calls that raise the budget *while keeping settlement atomic*, rather than splitting it and breaking P0-6.
+- **Inner-transaction fees default to zero** — a Python default, not an AVM auto-calculation — so every inner transaction needs an explicit `fee=Global.min_txn_fee`.
+
+> [!NOTE]
+> Still to do in Phase 7: the contract is **not yet wired to the backend**. `api/src/bids.ts` holds bids in memory, which AGENTS.md §6 explicitly forbids as the authoritative settlement record — the winner must come from `settle()`'s return value, not a backend calculation. Testnet deployment is also still pending; LocalNet only so far.
 
 <details>
 <summary><b>Two real bugs the audit caught (worth knowing if you're building on x402 + Algorand)</b></summary>
