@@ -514,6 +514,7 @@ The contract's product-state field and the agent interface (`getBid(productId, b
 | [`docs/tech-stack.md`](docs/tech-stack.md) | Stack decisions and rationale |
 | [`docs/AGENTS.md`](docs/AGENTS.md) | Engineering rules and phase-by-phase build plan |
 | [`docs/implementation-notes.md`](docs/implementation-notes.md) | **Phase 0 audit** — verified package APIs, corrections, open blockers |
+| [`docs/wallet-setup.md`](docs/wallet-setup.md) | How to generate, fund, and wire in testnet wallets — for new setups or replacing a lost key |
 
 ---
 
