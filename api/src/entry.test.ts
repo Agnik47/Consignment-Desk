@@ -8,8 +8,6 @@ vi.mock("./sessions.js", () => ({
 vi.mock("./contract.js", () => ({ openRoomOnChain: vi.fn() }));
 
 vi.mock("./rooms.js", () => ({
-  ROOM_ID: "demo-room",
-  PRODUCT_ID: "demo-product",
   ensureOpenForEntry: vi.fn(),
   getRoom: vi.fn(() => ({ status: "OPEN", deadline: null })),
   hasEntered: vi.fn(() => false),
@@ -20,6 +18,9 @@ vi.mock("./rooms.js", () => ({
 const { enterRoom, EntryError } = await import("./entry.js");
 const { getSession } = await import("./sessions.js");
 const { ensureOpenForEntry, getParticipant } = await import("./rooms.js");
+
+const ROOM_ID = "test-room";
+const PERSONA = "balanced" as const;
 
 // These cover every early-exit path in enterRoom() that returns or throws
 // before touching the x402 client / algod — i.e. before any real network
@@ -35,16 +36,24 @@ describe("enterRoom — early-exit paths (no network)", () => {
 
   it("rejects a session that doesn't exist", async () => {
     vi.mocked(getSession).mockReturnValue(undefined);
-    await expect(enterRoom("no-such-session")).rejects.toThrow(EntryError);
-    await expect(enterRoom("no-such-session")).rejects.toMatchObject({ code: "SESSION_NOT_FOUND" });
+    await expect(enterRoom(ROOM_ID, "no-such-session", PERSONA)).rejects.toThrow(EntryError);
+    await expect(enterRoom(ROOM_ID, "no-such-session", PERSONA)).rejects.toMatchObject({ code: "SESSION_NOT_FOUND" });
   });
 
   it("returns the existing participant instead of paying again", async () => {
-    const existing = { sessionId: "s1", address: "ADDR", agentId: "agent-1", enteredAt: 1, entryTxId: "TX1" };
+    const existing = {
+      sessionId: "s1",
+      roomId: ROOM_ID,
+      address: "ADDR",
+      agentId: "agent-1",
+      persona: PERSONA,
+      enteredAt: 1,
+      entryTxId: "TX1",
+    };
     vi.mocked(getSession).mockReturnValue({ sessionId: "s1", address: "ADDR", agentId: "agent-1", createdAt: 1 });
     vi.mocked(getParticipant).mockReturnValue(existing);
 
-    const result = await enterRoom("s1");
+    const result = await enterRoom(ROOM_ID, "s1", PERSONA);
     expect(result).toEqual(existing);
     expect(ensureOpenForEntry).not.toHaveBeenCalled();
   });
@@ -55,6 +64,6 @@ describe("enterRoom — early-exit paths (no network)", () => {
       throw new Error("Room is not accepting entries (status: SETTLED)");
     });
 
-    await expect(enterRoom("s2")).rejects.toMatchObject({ code: "ROOM_NOT_OPEN" });
+    await expect(enterRoom(ROOM_ID, "s2", PERSONA)).rejects.toMatchObject({ code: "ROOM_NOT_OPEN" });
   });
 });

@@ -57,7 +57,7 @@ export interface Hint {
 const CATEGORY_ADJUSTMENTS: Record<string, number> = { Camera: 3 };
 const ERA_ADJUSTMENTS: Record<string, number> = { "1970s": 2 };
 const SEALED_BOX_ADJUSTMENT = 1.5;
-const CONDITION_ADJUSTMENTS: Record<string, number> = { excellent: 2.2, good: 1.0, fair: -1.0, poor: -3.0 };
+export const CONDITION_ADJUSTMENTS: Record<string, number> = { excellent: 2.2, good: 1.0, fair: -1.0, poor: -3.0 };
 
 // How much of the product's value each driver explains. Sums to 1.0.
 // `condition` dominates deliberately: it is the single biggest unknown, and
@@ -122,10 +122,4 @@ export function estimate(product: ProductView, persona: Persona, hint: Hint | nu
 export function shouldBuyHint(product: ProductView, persona: Persona, budget: number, hintCost: number): boolean {
   if (budget < hintCost) return false;
   return confidence(product) < persona.hintThreshold;
-}
-
-/** Persona assignment for `agent-1`, `agent-2`, … — deterministic, so the demo cast is always the same. */
-export function personaForAgentNumber(n: number): Persona {
-  const name = PERSONA_ORDER[(n - 1) % PERSONA_ORDER.length];
-  return PERSONAS[name];
 }

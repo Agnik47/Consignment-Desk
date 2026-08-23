@@ -9,7 +9,7 @@
  */
 import { getAllBids } from "./bids.js";
 import { closeBidding, startReveal, settleRoom, getRoom, getProduct } from "./rooms.js";
-import { revealBidOnChain, settleOnChain, TARGET_CENTS } from "./contract.js";
+import { revealBidOnChain, settleOnChain, getRoomTargetCents, ensureSellerOptedIntoProduct } from "./contract.js";
 import { ALGORAND_ZERO_ADDRESS_STRING } from "@algorandfoundation/algokit-utils";
 
 export class SettlementError extends Error {
@@ -32,6 +32,7 @@ export interface RevealedBid {
 
 export interface SettlementReport {
   targetCents: number;
+  productName: string;
   /** Winner as returned BY THE CONTRACT. Null when nobody bid. */
   winnerAddress: string | null;
   winnerAgentId: string | null;
@@ -45,12 +46,12 @@ const explorer = (txId: string) => `https://lora.algokit.io/testnet/transaction/
 // The reveal page needs this after the tab that triggered settle() is long
 // gone (a phone that scanned the QR earlier, a projector refreshing later) —
 // the settle response itself is otherwise a one-time thing nobody else can
-// ever see again. Module state is consistent with the rest of this MVP's
-// single-room, single-process model (rooms.ts, agents.ts, bids.ts).
-let lastReport: SettlementReport | null = null;
+// ever see again. Module state, keyed by roomId, consistent with the rest of
+// this MVP's registry model (rooms.ts, agents.ts, bids.ts).
+const settlements = new Map<string, SettlementReport>();
 
-export function getLastSettlement(): SettlementReport | null {
-  return lastReport;
+export function getLastSettlement(roomId: string): SettlementReport | null {
+  return settlements.get(roomId) ?? null;
 }
 
 /**
@@ -63,8 +64,8 @@ export function getLastSettlement(): SettlementReport | null {
  * transfer, and every refund — stays in ONE atomic group, which is what PRD
  * P0-6 actually requires.
  */
-export async function revealAndSettle(): Promise<SettlementReport> {
-  const room = getRoom();
+export async function revealAndSettle(roomId: string): Promise<SettlementReport> {
+  const room = getRoom(roomId);
   if (room.status !== "OPEN") {
     throw new SettlementError("ROOM_NOT_OPEN", `Room cannot be settled from status ${room.status}.`);
   }
@@ -72,33 +73,42 @@ export async function revealAndSettle(): Promise<SettlementReport> {
     throw new SettlementError("TOO_EARLY", "Bidding deadline has not passed yet.");
   }
 
-  closeBidding();
-  startReveal();
+  closeBidding(roomId);
+  startReveal(roomId);
 
-  const bids = getAllBids();
+  const targetCents = getRoomTargetCents(roomId);
+  const bids = getAllBids(roomId);
   const revealed: Omit<RevealedBid, "isWinner">[] = [];
 
   for (const bid of bids) {
     try {
-      const revealTxId = await revealBidOnChain(bid.address, bid.guessCents, bid.nonceHex);
-      console.log(`[reveal] agent=${bid.agentId} guess=${bid.guessCents}c tx=${revealTxId}`);
+      const revealTxId = await revealBidOnChain(roomId, bid.address, bid.guessCents, bid.nonceHex);
+      console.log(`[reveal] room=${roomId} agent=${bid.agentId} guess=${bid.guessCents}c tx=${revealTxId}`);
       revealed.push({
         agentId: bid.agentId,
         address: bid.address,
         guessCents: bid.guessCents,
-        distanceCents: Math.abs(bid.guessCents - TARGET_CENTS),
+        distanceCents: Math.abs(bid.guessCents - targetCents),
         revealTxId,
       });
     } catch (err) {
       // A bid that can't be opened simply stays unrevealed and is excluded
       // from settlement by the contract — it must not abort everyone else's.
-      console.error(`[reveal] agent=${bid.agentId} FAILED:`, err instanceof Error ? err.message : "unknown");
+      console.error(`[reveal] room=${roomId} agent=${bid.agentId} FAILED:`, err instanceof Error ? err.message : "unknown");
     }
+  }
+
+  // Only spend the seller's own opt-in cost (0.1 ALGO, permanent) when
+  // settle()'s no-revealed-bids fallback will actually need it — see
+  // contract.ts's ensureSellerOptedIntoProduct. The common case (at least
+  // one revealed bid) never pays it.
+  if (revealed.length === 0) {
+    await ensureSellerOptedIntoProduct(roomId);
   }
 
   // One padding call per bidder keeps settle() inside the AVM's resource
   // reference budget (see contract.ts).
-  const settlement = await settleOnChain(Math.max(bids.length, 1));
+  const settlement = await settleOnChain(roomId, Math.max(bids.length, 1));
 
   // The contract returns the zero address when nobody's bid was revealed.
   const winnerAddress =
@@ -107,13 +117,14 @@ export async function revealAndSettle(): Promise<SettlementReport> {
       : null;
   const winnerAgentId = revealed.find((r) => r.address === winnerAddress)?.agentId ?? null;
 
-  settleRoom();
+  settleRoom(roomId);
 
-  console.log(`[settlement] winner=${winnerAgentId ?? "none"} address=${winnerAddress ?? "none"}`);
+  console.log(`[settlement] room=${roomId} winner=${winnerAgentId ?? "none"} address=${winnerAddress ?? "none"}`);
   for (const tx of settlement.txIds) console.log(`[settlement] tx=${tx} ${explorer(tx)}`);
 
   const report: SettlementReport = {
-    targetCents: TARGET_CENTS,
+    targetCents,
+    productName: getProduct(roomId).name,
     winnerAddress,
     winnerAgentId,
     bids: revealed
@@ -122,16 +133,15 @@ export async function revealAndSettle(): Promise<SettlementReport> {
     settleTxIds: settlement.txIds,
     settleGroupId: settlement.groupId,
   };
-  lastReport = report;
+  settlements.set(roomId, report);
   return report;
 }
 
-/** Post-settlement view for the reveal page — safe to expose everything now. */
+/** Post-settlement view for the reveal page — safe to expose everything now. Pure function of the report alone. */
 export function revealView(report: SettlementReport) {
-  const product = getProduct();
   return {
-    target: TARGET_CENTS / 100,
-    productName: product.name,
+    target: report.targetCents / 100,
+    productName: report.productName,
     winnerAgentId: report.winnerAgentId,
     winnerAddress: report.winnerAddress,
     bids: report.bids.map((b) => ({

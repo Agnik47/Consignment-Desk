@@ -286,6 +286,17 @@ For the QR itself, `qrcode.react` — five minutes, no thought required.
 | Express | Works per the docs, but the judges' own reference repo runs Hono — mirror what's verified, not what's marginally more familiar. |
 | Auth (JWT, sessions) | Session ID in a cookie. There is no threat model here. |
 | Raspberry Pi / OpenCV | Cut. See PRD §3. |
+| Jetson Nano — auto-grading, capture-triggered listings, live stream | **Built.** See `docs/AGENTS.md` Phase 3/3a: `api/src/listings.ts` (capture → grade → deploy a room), `api/src/supabase.ts` (reads the Jetson's `items` table), `JETSON_STREAM_URL` (live "Inspect" view). Only pay-for-3D-model (below) is still cut. |
+
+---
+
+## Future hardware idea — Jetson pay-for-3D-model (not in current stack, not built)
+
+Recorded here so the shape of the idea isn't lost, not because it's scoped for Sunday. Two of the original three Jetson-rig pieces are now built (auto-grading/capture-triggered listings, and live stream — see the table row above and `docs/AGENTS.md` Phase 3a). This one remains a future idea:
+
+**Pay-for-3D-model, agent-payable.** A new x402-gated endpoint (`GET /product/:id/3d-model` or similar), priced like the existing hint endpoint. An agent that wants stronger due diligence before bidding can autonomously pay for a 3D reconstruction of the product, generated on the Jetson's GPU from one or more captured angles. This is a second, richer "buy information" tier layered on top of the same agentic-payment pattern P0-3 already proves — not a new payment mechanism, just a second priced resource (PRD P2-5, P1-4).
+
+Not wired into the current `api`/`agent`/`web` workspaces. If it gets picked up, it slots in as: a new x402 route (`3d-model`, parallel to `hint`), a Jetson-side GPU job, and a "buy 3D model" affordance on the Room page.
 
 ---
 

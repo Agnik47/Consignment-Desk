@@ -5,10 +5,14 @@ import { getCookie, setCookie } from "hono/cookie";
 import { paymentMiddleware } from "@x402/hono";
 import { resourceServer, routes } from "./x402.js";
 import { createSession, getSession } from "./sessions.js";
-import { ROOM_ID, PRODUCT_ID, getPublicView, getProduct } from "./rooms.js";
+import { roomExists, getPublicView, getProduct, createRoom, productFromItem, seedDemoProduct, fromCents } from "./rooms.js";
+import { registerRoomChainConfig } from "./contract.js";
 import { enterRoom, EntryError } from "./entry.js";
 import { runAgent, AgentError, getPublicAgents } from "./agents.js";
 import { revealAndSettle, revealView, getLastSettlement, SettlementError } from "./settlement.js";
+import { getLatestItem } from "./supabase.js";
+import { createListing, ListingError } from "./listings.js";
+import { PERSONA_ORDER, type PersonaName } from "../../agent/src/brain.js";
 
 const app = new Hono();
 
@@ -54,10 +58,10 @@ app.post("/api/session", async (c) => {
 
 app.get("/api/room/:id", (c) => {
   const id = c.req.param("id");
-  if (id !== ROOM_ID) {
-    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}". This MVP serves a single room: "${ROOM_ID}".` }, 404);
+  if (!roomExists(id)) {
+    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
   }
-  return c.json({ ...getPublicView(), agents: getPublicAgents() });
+  return c.json({ ...getPublicView(id), agents: getPublicAgents(id) });
 });
 
 // The x402-gated resource. Only reachable with a real settled payment — the
@@ -67,41 +71,92 @@ app.get("/api/room/:id", (c) => {
 // participant itself once this confirms payment succeeded.
 app.post("/api/room/:id/enter", (c) => {
   const id = c.req.param("id");
-  if (id !== ROOM_ID) {
-    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}". This MVP serves a single room: "${ROOM_ID}".` }, 404);
+  if (!roomExists(id)) {
+    return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
   }
   return c.json({ ok: true });
 });
 
 // The x402-gated hint — P0-3. Only reachable with a real settled $0.05
 // payment; the middleware returns 402 to everyone else before this runs.
+// productId === roomId (1:1, see rooms.ts), so this reuses the same :id.
 app.get("/api/product/:id/hint", (c) => {
   const id = c.req.param("id");
-  if (id !== PRODUCT_ID) {
+  if (!roomExists(id)) {
     return c.json({ error: "PRODUCT_NOT_FOUND", message: `No product with id "${id}".` }, 404);
   }
-  return c.json(getProduct().hint);
+  return c.json(getProduct(id).hint);
 });
 
-const ENTRY_ERROR_STATUS: Record<string, 404 | 409 | 500 | 502> = {
+const LISTING_ERROR_STATUS: Record<string, 400 | 409 | 500 | 502> = {
+  INVALID_PRICE_RANGE: 400,
+  JETSON_NOT_CONFIGURED: 500,
+  CAPTURE_FAILED: 502,
+  CAPTURE_IN_PROGRESS: 409,
+  DEPLOY_FAILED: 500,
+};
+
+// Seller action, not a bidder payment — not x402-gated. Takes the seller's
+// chosen min/max price, triggers the Jetson to capture a fresh photo, deploys
+// that listing's own contract instance, and returns the new room for the
+// seller's page to QR-code.
+app.post("/api/listings", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { minPrice, maxPrice } = body as { minPrice?: unknown; maxPrice?: unknown };
+  if (typeof minPrice !== "number" || typeof maxPrice !== "number") {
+    return c.json(
+      { error: "INVALID_REQUEST", message: "Body must include minPrice and maxPrice (numbers)." },
+      400,
+    );
+  }
+
+  try {
+    const result = await createListing({ minPrice, maxPrice });
+    return c.json(result, 201);
+  } catch (err) {
+    if (err instanceof ListingError) {
+      console.error(`[listings] ${err.code}:`, err.message);
+      return c.json({ error: err.code, message: err.message }, LISTING_ERROR_STATUS[err.code] ?? 500);
+    }
+    console.error("[listings] unexpected error:", err instanceof Error ? err.message : "unknown error");
+    return c.json({ error: "LISTING_FAILED", message: "Could not create the listing. Please try again." }, 500);
+  }
+});
+
+const ENTRY_ERROR_STATUS: Record<string, 400 | 404 | 409 | 500 | 502> = {
   SESSION_NOT_FOUND: 404,
   ROOM_NOT_OPEN: 409,
   ENTRY_IN_PROGRESS: 409,
   PAYMENT_FAILED: 502,
   SESSION_KEY_MISSING: 500,
+  INVALID_REQUEST: 400,
 };
+
+function isPersonaName(value: unknown): value is PersonaName {
+  return typeof value === "string" && (PERSONA_ORDER as string[]).includes(value);
+}
 
 // The actual browser-facing "Pay & Enter" action. Reads the session cookie,
 // pays the entry fee server-side using that session's own custodial key —
-// the browser never touches a private key or a raw 402.
+// the browser never touches a private key or a raw 402. The bidder's chosen
+// persona (picked in the UI before entering) travels in the body.
 app.post("/api/session/enter", async (c) => {
   const sessionId = getCookie(c, SESSION_COOKIE);
   if (!sessionId) {
     return c.json({ error: "NO_SESSION", message: "Call POST /api/session first." }, 400);
   }
 
+  const body = await c.req.json().catch(() => ({}));
+  const { roomId, persona } = body as { roomId?: unknown; persona?: unknown };
+  if (typeof roomId !== "string" || !roomId || !isPersonaName(persona)) {
+    return c.json(
+      { error: "INVALID_REQUEST", message: "Body must include roomId (string) and persona (conservative|balanced|aggressive)." },
+      400,
+    );
+  }
+
   try {
-    const participant = await enterRoom(sessionId);
+    const participant = await enterRoom(roomId, sessionId, persona);
     return c.json(participant);
   } catch (err) {
     if (err instanceof EntryError) {
@@ -123,6 +178,7 @@ const AGENT_ERROR_STATUS: Record<string, 400 | 404 | 409 | 500 | 502> = {
   LATE_BID: 409,
   INVALID_BID: 400,
   PAYMENT_FAILED: 502,
+  INVALID_REQUEST: 400,
 };
 
 // Runs this session's agent: analyze → maybe buy a hint → bid.
@@ -132,8 +188,14 @@ app.post("/api/session/agent/run", async (c) => {
     return c.json({ error: "NO_SESSION", message: "Call POST /api/session first." }, 400);
   }
 
+  const body = await c.req.json().catch(() => ({}));
+  const { roomId } = body as { roomId?: unknown };
+  if (typeof roomId !== "string" || !roomId) {
+    return c.json({ error: "INVALID_REQUEST", message: "Body must include roomId (string)." }, 400);
+  }
+
   try {
-    const agent = await runAgent(sessionId);
+    const agent = await runAgent(roomId, sessionId);
     return c.json(agent);
   } catch (err) {
     if (err instanceof AgentError) {
@@ -145,7 +207,7 @@ app.post("/api/session/agent/run", async (c) => {
   }
 });
 
-const SETTLEMENT_ERROR_STATUS: Record<string, 409 | 500> = {
+const SETTLEMENT_ERROR_STATUS: Record<string, 404 | 409 | 500> = {
   ROOM_NOT_OPEN: 409,
   TOO_EARLY: 409,
 };
@@ -154,12 +216,12 @@ const SETTLEMENT_ERROR_STATUS: Record<string, 409 | 500> = {
 // the response is whatever the CONTRACT returned — never computed here.
 app.post("/api/room/:id/settle", async (c) => {
   const id = c.req.param("id");
-  if (id !== ROOM_ID) {
+  if (!roomExists(id)) {
     return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
   }
 
   try {
-    const report = await revealAndSettle();
+    const report = await revealAndSettle(id);
     return c.json(revealView(report));
   } catch (err) {
     if (err instanceof SettlementError) {
@@ -177,19 +239,61 @@ app.post("/api/room/:id/settle", async (c) => {
 // way to see the result. Read-only, safe to poll.
 app.get("/api/room/:id/reveal", (c) => {
   const id = c.req.param("id");
-  if (id !== ROOM_ID) {
+  if (!roomExists(id)) {
     return c.json({ error: "ROOM_NOT_FOUND", message: `No room with id "${id}".` }, 404);
   }
-  const report = getLastSettlement();
+  const report = getLastSettlement(id);
   if (!report) {
     return c.json({ error: "NOT_SETTLED", message: "This room has not been settled yet." }, 404);
   }
   return c.json(revealView(report));
 });
 
+// Legacy single-room seed, kept for local dev / scripts/test-e2e.ts, which
+// injects exactly these env vars into a spawned API process (see that
+// script). If they're all set, "demo-room" is registered from them at boot,
+// same as it always was pre-listings; otherwise the registry starts EMPTY —
+// the first real room comes from POST /api/listings.
+async function seedLegacyDemoRoom(): Promise<void> {
+  const appId = process.env.BIDDING_ROOM_APP_ID;
+  const productAsaId = process.env.BIDDING_ROOM_PRODUCT_ASA_ID;
+  const targetCents = process.env.DEMO_TARGET_CENTS;
+  const targetNonce = process.env.DEMO_TARGET_NONCE;
+  if (!appId || !productAsaId || !targetCents || !targetNonce) {
+    console.log("[rooms] no legacy room config — registry starts empty; first room comes from POST /api/listings");
+    return;
+  }
+
+  const roomId = "demo-room";
+  const hiddenTarget = fromCents(Number(targetCents));
+
+  let product;
+  try {
+    const item = await getLatestItem();
+    product = item
+      ? productFromItem(item, roomId, hiddenTarget, targetNonce)
+      : seedDemoProduct(roomId, hiddenTarget, targetNonce);
+  } catch (err) {
+    console.error("[rooms] failed to load item from Supabase, using demo seed:", err instanceof Error ? err.message : err);
+    product = seedDemoProduct(roomId, hiddenTarget, targetNonce);
+  }
+
+  createRoom(roomId, product);
+  registerRoomChainConfig(roomId, {
+    appId: BigInt(appId),
+    productAssetId: BigInt(productAsaId),
+    targetCents: Number(targetCents),
+    targetNonce,
+    bidStakeMicroUsdc: BigInt(process.env.BID_STAKE_MICRO_USDC ?? 100_000),
+  });
+  console.log(`[rooms] legacy demo-room registered (app=${appId})`);
+}
+
+await seedLegacyDemoRoom();
+
 const port = Number(process.env.API_PORT ?? 4021);
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[api] listening on http://localhost:${info.port}`);
-  console.log(`[api] gated routes: GET /api/test-payment, POST /api/room/${ROOM_ID}/enter, GET /api/product/${PRODUCT_ID}/hint`);
+  console.log(`[api] gated routes: GET /api/test-payment, POST /api/room/:id/enter, GET /api/product/:id/hint`);
 });

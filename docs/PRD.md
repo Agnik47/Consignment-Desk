@@ -45,11 +45,12 @@ The gap is a demo where an agent's *spending decision* visibly matters — where
 | Not building | Why |
 |---|---|
 | **Raspberry Pi + OpenCV product monitoring** | Hardware failure risk at a venue we don't control, on a demo path judges aren't scoring. Orthogonal to the payment story. Legitimate phase-2 idea; zero value on Sunday. |
+| ~~**Jetson Nano camera rig (auto-grading, live stream, paid 3D model generation)**~~ | **Auto-grading and live stream are now built** — see P2-1/P2-1a and `docs/AGENTS.md` Phase 3a. Only pay-for-3D-model generation (P2-5) remains cut. |
 | **Production wallet UX (Pera Connect, WalletConnect)** | Custodial dev-managed keys are sufficient for a judged demo and save 3+ hours of integration and failure modes. |
 | **Listing fees, premium-agent tiers, subscription plans** | Five revenue lines is a slide, not a build. We implement two real ones (§5, P0-6) and speak to the rest as roadmap. |
-| **Multi-room / concurrent auctions** | One room, one product, one reveal. Concurrency adds state complexity and buys no demo value. |
+| ~~**Multi-room / concurrent auctions**~~ | **Now built** — each seller listing gets its own room, contract instance, and QR (`docs/AGENTS.md` Phase 3/3a). Superseded, not cut. |
 | **MainNet deployment or real USDC** | Testnet only. MainNet is a Global Challenge requirement, not a PreHack one, and introduces funding and irreversibility risk mid-hackathon. |
-| **Seller-side onboarding flow** | Products are pre-seeded by the team. A seller UI is a whole second product surface for one demo listing. |
+| **Seller-side onboarding flow** | The minimal "List this item" flow is built (P2-2, Phase 3a) — a single button that captures, grades, and creates a room. A full onboarding/listings-management UI is still out of scope. |
 | **Anti-collusion / bid-privacy cryptography beyond basic commit-reveal** | Real sealed-bid security is a research problem. Commit-reveal is honest enough for a demo and we will *say* it's a demo-grade implementation rather than overclaim. |
 
 ---
@@ -159,10 +160,12 @@ Product center-stage, agent panels around it. Agent *activity* is the thing bein
 
 ### P2 — Future considerations (design for, don't build)
 
-- **P2-1** Physical verification layer (Raspberry Pi + OpenCV) emitting product-state events as on-chain attestations. *Architectural note:* keep the contract's product-state field extensible so an oracle can write to it later without a schema change.
-- **P2-2** Real seller onboarding and self-serve listing.
-- **P2-3** Agent marketplace — users choose or bring their own agent strategies. *Architectural note:* keep the agent service behind a clean interface (`getBid(productId, budget) → sealedBid`) so third-party agents can slot in.
+- ~~**P2-1** Physical verification layer~~ **Built** — a seller triggers a Jetson capture, which grades the item and publishes a brand-new room/product listing. See `docs/AGENTS.md` Phase 3a for the exact flow and the Jetson `/capture` contract.
+- ~~**P2-1a** Live webcam stream~~ **Built**, separately from P2-1 — `JETSON_STREAM_URL` powers the Room page's "Inspect live" toggle.
+- **P2-2** Real seller onboarding and self-serve listing. The minimal version (one "List this item" button, Phase 3a) is built; a fuller onboarding/listings-management UI is still future work.
+- **P2-3** Agent marketplace — users choose or bring their own agent strategies. *Architectural note:* keep the agent service behind a clean interface (`getBid(productId, budget) → sealedBid`) so third-party agents can slot in. (A first step toward this shipped as the persona picker — bidders now choose conservative/balanced/aggressive before entering, rather than it being auto-assigned.)
 - **P2-4** MainNet deployment with real USDC for Global Challenge entry.
+- **P2-5** Pay-for-3D-model access: a new x402-gated endpoint, parallel to the existing hint endpoint, that lets an agent spend from its own budget to request a 3D model of the product — generated on the Jetson's GPU from one or more captured images — before bidding. Extends the "agent decides whether spending is worth it" story to a second, higher-cost information tier (see also P1-4's hint-tiers idea). *Architectural note:* reuse the hint endpoint's x402-gated, agent-initiated, no-human-approval pattern rather than inventing new payment machinery for it. Not built yet.
 
 ---
 

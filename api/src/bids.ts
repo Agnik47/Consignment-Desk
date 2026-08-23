@@ -1,6 +1,7 @@
 import { getRoom } from "./rooms.js";
 
 export interface Bid {
+  roomId: string;
   agentId: string;
   sessionId: string;
   /** Bidder's on-chain address — the identity the contract knows it by. */
@@ -30,19 +31,24 @@ export class BidError extends Error {
 // commitment, since the chain deliberately cannot see the guesses.
 const bids = new Map<string, Bid>();
 
-export function getBid(agentId: string): Bid | undefined {
-  return bids.get(agentId);
+function key(roomId: string, agentId: string): string {
+  return `${roomId}:${agentId}`;
 }
 
-export function getAllBids(): Bid[] {
-  return [...bids.values()];
+export function getBid(roomId: string, agentId: string): Bid | undefined {
+  return bids.get(key(roomId, agentId));
 }
 
-export function hasBid(agentId: string): boolean {
-  return bids.has(agentId);
+export function getAllBids(roomId: string): Bid[] {
+  return [...bids.values()].filter((b) => b.roomId === roomId);
+}
+
+export function hasBid(roomId: string, agentId: string): boolean {
+  return bids.has(key(roomId, agentId));
 }
 
 export interface RecordBidInput {
+  roomId: string;
   sessionId: string;
   agentId: string;
   address: string;
@@ -63,20 +69,20 @@ export interface RecordBidInput {
  */
 export function recordBid(input: RecordBidInput): Bid {
   const bid: Bid = { ...input, submittedAt: Date.now() };
-  bids.set(input.agentId, bid);
+  bids.set(key(input.roomId, input.agentId), bid);
   return bid;
 }
 
 /** Pre-flight guard: throws a readable error before we spend a transaction. */
-export function assertCanBid(agentId: string): void {
-  const room = getRoom();
+export function assertCanBid(roomId: string, agentId: string): void {
+  const room = getRoom(roomId);
   if (room.status !== "OPEN") {
     throw new BidError("BIDDING_CLOSED", `Room is not accepting bids (status: ${room.status}).`);
   }
   if (room.deadline !== null && Date.now() > room.deadline) {
     throw new BidError("LATE_BID", "Bidding deadline has passed.");
   }
-  if (bids.has(agentId)) {
+  if (bids.has(key(roomId, agentId))) {
     throw new BidError("DUPLICATE_BID", `Agent ${agentId} has already submitted a bid.`);
   }
 }

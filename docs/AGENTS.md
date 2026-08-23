@@ -121,12 +121,12 @@ Do NOT add unless P0 is green:
 -   Postgres/Prisma
 -   Redis
 -   Docker orchestration
--   multi-room auctions
--   seller dashboard
+-   seller dashboard (a listings-management/history UI — the seller flow itself is now in scope, see Phase 3a)
 -   subscription tiers
 -   MainNet
 -   real USDC
 -   Raspberry Pi/OpenCV
+-   Jetson Nano pay-for-3D-model — auto-grading/capture-triggered listings and the live stream ARE now in scope (Phase 3a, and the separately-shipped live-stream feature); only pay-for-3D-model remains cut, see §15
 -   complex AI infrastructure
 
 ------------------------------------------------------------------------
@@ -144,6 +144,9 @@ agentic-bidding-room/
 │   └── src/
 │       ├── x402.ts
 │       ├── rooms.ts
+│       ├── contract.ts
+│       ├── listings.ts
+│       ├── supabase.ts
 │       ├── chain.ts
 │       └── sockets.ts
 ├── agent/
@@ -152,15 +155,21 @@ agentic-bidding-room/
 │       └── client.ts
 ├── web/
 │   └── app/
-│       ├── page.tsx
+│       ├── page.tsx        (seller "List a product" flow, Phase 3a)
 │       └── room/[id]/
 │           ├── page.tsx
 │           └── reveal/page.tsx
 ├── tests/
 ├── scripts/
+│   └── deployRoom.ts       (deploys one contract instance per room)
 ├── .env.example
 └── AGENTS.md
 ```
+
+Two integrations sit alongside this layout, not inside it: Supabase (an
+`items` table the Jetson writes captured photos + grading data to — read via
+`api/src/supabase.ts`) and the Jetson's own `/capture` HTTP endpoint (called
+by `api/src/listings.ts` — see Phase 3a for the exact contract).
 
 Services:
 
@@ -441,20 +450,19 @@ Responsibilities:
 
 ## Phase 3 --- Room and Product State
 
-Create one deterministic room.
-
-Example:
-
-``` text
-roomId = demo-room
-productId = demo-product
-```
+Rooms are created on demand, one per seller listing — not a single
+hardcoded room. `api/src/rooms.ts` holds a registry
+(`Map<roomId, { room, product, participants }>`), and every room/product
+function is keyed by `roomId` (`getRoom(roomId)`, `getProduct(roomId)`,
+`ensureOpenForEntry(roomId)`, etc.). `productId === roomId` — the
+relationship is 1:1, so there is no separate product id to track.
 
 Product:
 
 ``` text
 name
 description
+imageUrl
 baseValue
 publicAttributes
 hint
@@ -476,7 +484,58 @@ REVEALING
 SETTLED
 ```
 
-Do not build multi-room support.
+Each room gets its own deployed contract app instance
+(`scripts/deployRoom.ts`'s `deployRoom()`, called once per listing) — the
+contract itself stays "one app = one room" (its state, and `settle()`'s
+one-time close, are not designed to hold multiple rooms). `api/src/contract.ts`
+resolves each room's `appId`/`productAssetId`/`targetCents`/`targetNonce`/
+`bidStakeMicroUsdc` from a `registerRoomChainConfig(roomId, ...)` registry
+populated at room-creation time, instead of one set of module-level env
+constants. A legacy single-room seed path (`BIDDING_ROOM_APP_ID` etc. in
+`.env`) still registers a `"demo-room"` at boot for local dev and
+`scripts/test-e2e.ts` — if those env vars are unset, the registry simply
+starts empty and the first real room comes from Phase 3a below.
+
+------------------------------------------------------------------------
+
+## Phase 3a --- Listing Creation
+
+A seller (the person at the Jetson rig) creates a new room by hitting
+"List this item" on the web app's `/` page, which calls:
+
+``` text
+POST /api/listings
+```
+
+Not x402-gated — this is a seller action, not a bidder payment.
+
+Sequence (`api/src/listings.ts`):
+
+1.  Mint the next sequential item id (`LOT-001`, `LOT-002`, ...).
+2.  `POST` the Jetson's capture endpoint with that id, and wait for its
+    synchronous response (see the contract below).
+3.  Compute a target value from the graded item (base value + the
+    condition-grade adjustment `agent/src/brain.ts` already uses for the
+    paid hint — the same information that justifies the hint purchase
+    also justifies the target, deliberately).
+4.  `deployRoom()` — a fresh contract instance for this room.
+5.  Generate a `roomId`, build the room's `Product` from the capture
+    response, register it in the room/contract-config registries.
+6.  Return `{ roomId, product }` so the web app can render a QR for
+    `/room/{roomId}`.
+
+### Jetson `/capture` contract
+
+Confirmed against the real device, not guessed:
+
+``` text
+POST <JETSON_CAPTURE_URL>?item_id=<LOT-NNN>
+  -> 200 { image_url: string, grade_card: { category, identified_as, condition, grader_confidence } }
+```
+
+Synchronous. The Jetson also writes this to its own Supabase `items` row
+under the same id, independent of this response — the API does not poll
+Supabase for this flow; it uses the response body directly.
 
 ------------------------------------------------------------------------
 
@@ -718,13 +777,16 @@ Only after `npm run test:e2e` is green.
 
 Build:
 
-### QR page
+### Listing page (`/`)
 
-Shows:
+The seller-facing flow (Phase 3a), not a single static QR:
 
--   room QR
--   room ID
--   demo URL
+-   a "List this item" button
+-   a loading state while the Jetson captures and the room deploys
+-   on success, that listing's own QR, room ID, and demo URL
+-   a way to list another item
+
+QR generation is per-listing now, not one fixed room.
 
 ### Room page
 
@@ -804,6 +866,13 @@ The demo should use:
 -   controlled timing
 
 Randomness must not decide whether the demo succeeds.
+
+This determinism claim holds literally for the legacy env-seeded
+`demo-room` path only (Phase 3). A room created via Phase 3a's live
+capture is inherently non-deterministic by design — a real photo, a real
+grade, a target computed from that grade — because the whole point of
+Phase 3a is proving the pipeline against a real Jetson, not reproducing a
+fixed script.
 
 Provide:
 
@@ -1082,3 +1151,29 @@ It must pass against the real Algorand Testnet.
 
 **Do not call the project complete until the entire chain above has been
 executed successfully.**
+
+------------------------------------------------------------------------
+
+# 15. Roadmap Ideas --- Remaining Out of Scope for This MVP
+
+Recorded so the ideas aren't lost, not as an instruction to build them.
+Rule 7 cuts what's listed below; do not start it unless the PRD is
+explicitly re-scoped.
+
+1.  ~~**Jetson Nano auto-grading.**~~ **Built.** A seller triggers the
+    Jetson to capture a photo, the Jetson runs its own grading pass and
+    returns condition/category/identification, and that publishes a
+    brand-new room/product listing — see Phase 3a.
+2.  **Live webcam streaming.** Also built, separately from Phase 3a: the
+    same Jetson streams live video from the webcam into the Room page
+    (`JETSON_STREAM_URL`, the "Inspect live" toggle), so participants and
+    judges can watch the physical item in real time.
+3.  **Pay-for-3D-model, agent-payable.** Still not built. A new x402-gated
+    endpoint, parallel to the existing hint endpoint, that lets an agent
+    spend from its own budget to request a 3D model of the product
+    generated on the Jetson's GPU from one or more captured images --- a
+    second, higher-cost information tier on top of the same
+    agentic-payment pattern the hint endpoint already proves.
+
+See `docs/PRD.md` P2-1, P2-1a, and P2-5, and `docs/tech-stack.md`'s
+"Future hardware idea" section for more detail.

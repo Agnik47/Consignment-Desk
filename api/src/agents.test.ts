@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getPublicAgents, resetAgentsForTests } from "./agents.js";
-import { openRoom, resetForTests } from "./rooms.js";
+import { createRoom, openRoom, resetForTests, seedDemoProduct } from "./rooms.js";
 import { recordBid, resetBidsForTests } from "./bids.js";
+
+const ROOM_ID = "test-room";
 
 beforeEach(() => {
   resetForTests();
   resetBidsForTests();
   resetAgentsForTests();
+  createRoom(ROOM_ID, seedDemoProduct(ROOM_ID, 29, "aa".repeat(32)));
 });
 
 // The paid agent loop itself is covered for real in agents.integration.test.ts
@@ -15,8 +18,9 @@ beforeEach(() => {
 // page must never reveal what anyone bid before the reveal.
 describe("public agent view keeps bids sealed", () => {
   it("reports that an agent has bid without exposing the amount", () => {
-    openRoom(60_000);
+    openRoom(ROOM_ID, 60_000);
     recordBid({
+      roomId: ROOM_ID,
       sessionId: "s1",
       agentId: "agent-1",
       address: "AAAA",
@@ -29,7 +33,7 @@ describe("public agent view keeps bids sealed", () => {
     // The agent record is created by runAgent(); with none present the view is
     // empty, so this asserts the shape contract on the serialized output for
     // any agent that *does* exist plus the bid store's own leak-resistance.
-    const serialized = JSON.stringify(getPublicAgents());
+    const serialized = JSON.stringify(getPublicAgents(ROOM_ID));
     expect(serialized).not.toContain("2870");
     expect(serialized).not.toContain("guessCents");
     expect(serialized).not.toContain("nonceHex");
@@ -49,7 +53,7 @@ describe("public agent view keeps bids sealed", () => {
       "failureMessage",
     ]);
 
-    for (const agent of getPublicAgents()) {
+    for (const agent of getPublicAgents(ROOM_ID)) {
       for (const key of Object.keys(agent)) {
         expect(allowed.has(key)).toBe(true);
       }

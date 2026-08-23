@@ -487,3 +487,13 @@ Both dev servers (`npm run dev:api`, `npm run dev:web`) were started for real an
 ### Regression
 
 All five workspaces (`api`, `agent`, `contracts`, `scripts`, `web`) typecheck clean. `api`/`agent` unit test suites unaffected (37 and 22 passing respectively) — the only backend changes were additive (a new module-level getter, a new read-only route, CORS middleware), nothing existing was restructured.
+
+---
+
+## 16. Jetson Hardware Integration
+
+**Superseded — auto-grading and live streaming are now built.** `AGENTS.md` §15 and `PRD.md` P2-1/P2-1a now say so directly; this section stays only as a historical note.
+
+- ~~**Jetson Nano auto-grading**~~ **Built:** `POST /api/listings` (`api/src/listings.ts`) triggers the Jetson's `/capture` endpoint, grades the result, and publishes a brand-new room/product listing — see `AGENTS.md` Phase 3a for the exact request/response contract.
+- ~~**Live webcam streaming**~~ **Built:** `JETSON_STREAM_URL` + the Room page's "Inspect live" toggle (`api/src/rooms.ts`'s `getStreamUrl()`, `RoomView.tsx`).
+- **Pay-for-3D-model endpoint:** still not built. A third x402-gated resource, same shape as the existing `/product/:id/hint` route (§11 above), pricing a GPU-generated 3D reconstruction that an agent can choose to buy before bidding. If picked up, it slots in as one new priced route (reusing `api/src/x402client.ts`'s existing 402→sign→retry machinery) and a "buy 3D model" affordance on the Room page.

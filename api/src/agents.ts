@@ -1,4 +1,4 @@
-// The agent worker: runs one agent's full decision loop for the demo room.
+// The agent worker: runs one agent's full decision loop for a room.
 //
 // DEVIATION FROM AGENTS.md §3, stated rather than hidden: the documented
 // layout implies agents run as separate processes. They run as in-process
@@ -13,14 +13,12 @@ import {
   PERSONAS,
   confidence,
   estimate,
-  personaForAgentNumber,
   shouldBuyHint,
   type Hint,
-  type Persona,
   type PersonaName,
   type ProductView,
 } from "../../agent/src/brain.js";
-import { HINT_PATH, HINT_PRICE_USD } from "./x402.js";
+import { hintPath, HINT_PRICE_USD } from "./x402.js";
 import { payAndFetch, PaymentError } from "./x402client.js";
 import { getSession } from "./sessions.js";
 import crypto from "node:crypto";
@@ -32,6 +30,7 @@ import { commitBidOnChain, optInToProduct, assertCanStake } from "./contract.js"
 export type AgentStatus = "idle" | "analyzing" | "buying_hint" | "thinking" | "bid_submitted" | "failed";
 
 export interface AgentRecord {
+  roomId: string;
   agentId: string;
   sessionId: string;
   persona: PersonaName;
@@ -62,7 +61,11 @@ export interface PublicAgent {
 const agents = new Map<string, AgentRecord>();
 const running = new Set<string>();
 
-/** Agent number from an id like "agent-3". Falls back to 1 for anything unexpected. */
+function key(roomId: string, agentId: string): string {
+  return `${roomId}:${agentId}`;
+}
+
+/** Agent number from an id like "agent-3". Falls back to 1 for anything unexpected. Display ordering only — persona no longer derives from this. */
 function agentNumber(agentId: string): number {
   const n = Number(agentId.split("-")[1]);
   return Number.isFinite(n) && n > 0 ? n : 1;
@@ -70,16 +73,17 @@ function agentNumber(agentId: string): number {
 
 function setStatus(record: AgentRecord, status: AgentStatus, patch: Partial<AgentRecord> = {}): AgentRecord {
   Object.assign(record, patch, { status, updatedAt: Date.now() });
-  console.log(`[agent] agent=${record.agentId} persona=${record.persona} status=${status}`);
+  console.log(`[agent] room=${record.roomId} agent=${record.agentId} persona=${record.persona} status=${status}`);
   return record;
 }
 
-export function getAgent(agentId: string): AgentRecord | undefined {
-  return agents.get(agentId);
+export function getAgent(roomId: string, agentId: string): AgentRecord | undefined {
+  return agents.get(key(roomId, agentId));
 }
 
-export function getPublicAgents(): PublicAgent[] {
+export function getPublicAgents(roomId: string): PublicAgent[] {
   return [...agents.values()]
+    .filter((a) => a.roomId === roomId)
     .sort((a, b) => agentNumber(a.agentId) - agentNumber(b.agentId))
     .map((a) => ({
       agentId: a.agentId,
@@ -89,19 +93,21 @@ export function getPublicAgents(): PublicAgent[] {
       confidence: a.confidence,
       hintPurchased: a.hintPurchased,
       hintTxId: a.hintTxId,
-      hasBid: getBid(a.agentId) !== undefined,
+      hasBid: getBid(roomId, a.agentId) !== undefined,
       failureCode: a.failureCode,
       failureMessage: a.failureMessage,
     }));
 }
 
-function ensureAgent(agentId: string, sessionId: string, persona: Persona): AgentRecord {
-  const existing = agents.get(agentId);
+function ensureAgent(roomId: string, agentId: string, sessionId: string, persona: PersonaName): AgentRecord {
+  const k = key(roomId, agentId);
+  const existing = agents.get(k);
   if (existing) return existing;
   const record: AgentRecord = {
+    roomId,
     agentId,
     sessionId,
-    persona: persona.name,
+    persona,
     status: "idle",
     confidence: null,
     hintPurchased: false,
@@ -111,7 +117,7 @@ function ensureAgent(agentId: string, sessionId: string, persona: Persona): Agen
     failureMessage: null,
     updatedAt: Date.now(),
   };
-  agents.set(agentId, record);
+  agents.set(k, record);
   return record;
 }
 
@@ -130,31 +136,31 @@ export class AgentError extends Error {
  * Failures are recorded on the agent as a `failed` status with a reason rather
  * than letting the agent silently vanish (AGENTS.md Phase 10).
  */
-export async function runAgent(sessionId: string): Promise<AgentRecord> {
+export async function runAgent(roomId: string, sessionId: string): Promise<AgentRecord> {
   const session = getSession(sessionId);
   if (!session) {
     throw new AgentError("SESSION_NOT_FOUND", "No session found. Call POST /api/session first.");
   }
 
-  const participant = getParticipant(sessionId);
+  const participant = getParticipant(roomId, sessionId);
   if (!participant) {
     throw new AgentError("NOT_ENTERED", "This session has not entered the room. Pay the entry fee first.");
   }
 
-  const { agentId } = participant;
-  if (getBid(agentId)) {
+  const { agentId, persona: personaName } = participant;
+  if (getBid(roomId, agentId)) {
     throw new AgentError("ALREADY_BID", `Agent ${agentId} has already submitted its one bid.`);
   }
-  if (running.has(agentId)) {
+  if (running.has(key(roomId, agentId))) {
     throw new AgentError("AGENT_RUNNING", `Agent ${agentId} is already running.`);
   }
-  running.add(agentId);
+  running.add(key(roomId, agentId));
 
-  const persona = personaForAgentNumber(agentNumber(agentId));
-  const record = ensureAgent(agentId, sessionId, persona);
+  const persona = PERSONAS[personaName];
+  const record = ensureAgent(roomId, agentId, sessionId, personaName);
 
   try {
-    const product = getProduct();
+    const product = getProduct(roomId);
     const view: ProductView = { baseValue: product.baseValue, publicAttributes: product.publicAttributes };
 
     setStatus(record, "analyzing", { confidence: confidence(view), failureCode: null, failureMessage: null });
@@ -169,11 +175,11 @@ export async function runAgent(sessionId: string): Promise<AgentRecord> {
     if (shouldBuyHint(view, persona, budgetUsd, HINT_PRICE_USD)) {
       setStatus(record, "buying_hint");
       try {
-        const { response, txId } = await payAndFetch(sessionId, HINT_PATH);
+        const { response, txId } = await payAndFetch(sessionId, hintPath(roomId));
         hint = (await response.json()) as Hint;
         record.hintPurchased = true;
         record.hintTxId = txId;
-        console.log(`[x402] agent=${agentId} resource=hint amount=$${HINT_PRICE_USD.toFixed(2)} tx=${txId}`);
+        console.log(`[x402] room=${roomId} agent=${agentId} resource=hint amount=$${HINT_PRICE_USD.toFixed(2)} tx=${txId}`);
       } catch (err) {
         const message = err instanceof PaymentError ? err.message : "Hint purchase failed.";
         setStatus(record, "failed", { failureCode: "PAYMENT_FAILED", failureMessage: message });
@@ -186,20 +192,21 @@ export async function runAgent(sessionId: string): Promise<AgentRecord> {
 
     try {
       assertValidGuess(guessCents);
-      assertCanBid(agentId);
-      await assertCanStake(sessionId);
+      assertCanBid(roomId, agentId);
+      await assertCanStake(roomId, sessionId);
 
       // Must hold a product-asset slot to be eligible to win — the contract
       // cannot push the ASA to an account that hasn't opted in.
-      await optInToProduct(sessionId);
+      await optInToProduct(roomId, sessionId);
 
       // The guess never goes on-chain; only its commitment does.
       const nonceHex = crypto.randomBytes(32).toString("hex");
       const commitment = createCommitment(guessCents, nonceHex);
 
-      const onChain = await commitBidOnChain(sessionId, commitment, guessCents, nonceHex);
+      const onChain = await commitBidOnChain(roomId, sessionId, commitment, guessCents, nonceHex);
 
       recordBid({
+        roomId,
         sessionId,
         agentId,
         address: participant.address,
@@ -209,7 +216,7 @@ export async function runAgent(sessionId: string): Promise<AgentRecord> {
         txId: onChain.txId,
       });
       record.bidTxId = onChain.txId;
-      console.log(`[bid] agent=${agentId} commitment=${commitment.slice(0, 16)}… tx=${onChain.txId} hintPurchased=${record.hintPurchased}`);
+      console.log(`[bid] room=${roomId} agent=${agentId} commitment=${commitment.slice(0, 16)}… tx=${onChain.txId} hintPurchased=${record.hintPurchased}`);
     } catch (err) {
       const code = err instanceof BidError ? err.code : "BID_REJECTED";
       const message = err instanceof Error ? err.message : "Bid rejected.";
@@ -219,7 +226,7 @@ export async function runAgent(sessionId: string): Promise<AgentRecord> {
 
     return setStatus(record, "bid_submitted");
   } finally {
-    running.delete(agentId);
+    running.delete(key(roomId, agentId));
   }
 }
 

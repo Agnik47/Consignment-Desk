@@ -5,7 +5,6 @@ import {
   confidence,
   estimate,
   parseCondition,
-  personaForAgentNumber,
   shouldBuyHint,
   type Hint,
   type ProductView,
@@ -108,20 +107,6 @@ describe("shouldBuyHint", () => {
     for (const persona of Object.values(PERSONAS)) {
       expect(informed).toBeGreaterThanOrEqual(persona.hintThreshold);
     }
-  });
-});
-
-describe("personaForAgentNumber", () => {
-  it("assigns the three personas in order, then cycles", () => {
-    expect(personaForAgentNumber(1).name).toBe("conservative");
-    expect(personaForAgentNumber(2).name).toBe("balanced");
-    expect(personaForAgentNumber(3).name).toBe("aggressive");
-    expect(personaForAgentNumber(4).name).toBe("conservative");
-  });
-
-  it("covers all three personas within the first three agents", () => {
-    const assigned = [1, 2, 3].map((n) => personaForAgentNumber(n).name);
-    expect(new Set(assigned)).toEqual(new Set(PERSONA_ORDER));
   });
 });
 

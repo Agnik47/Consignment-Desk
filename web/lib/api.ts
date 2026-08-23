@@ -40,13 +40,33 @@ export function createSession(): Promise<SessionRecord> {
 export type RoomStatus = "CREATED" | "OPEN" | "BIDDING_CLOSED" | "REVEALING" | "SETTLED";
 export type AgentStatus = "idle" | "analyzing" | "buying_hint" | "thinking" | "bid_submitted" | "failed";
 
+// This system's own virtual exchange rate — NOT a live market price. The
+// API/contract layer works entirely in USD cents internally (that's what's
+// wired into the on-chain target commitment and the valuation heuristic);
+// every dollar figure the UI receives is converted to this system's ALGO
+// scale for display only.
+export const VIRTUAL_ALGO_TO_USD = 2000; // 0.01 ALGO = $20
+export const usdToAlgo = (usd: number) => usd / VIRTUAL_ALGO_TO_USD;
+
+export type PersonaName = "conservative" | "balanced" | "aggressive";
+
+/** Mirrors agent/src/brain.ts's PERSONAS — duplicated here since web/ shares no package with agent/. */
+export const PERSONAS: { name: PersonaName; description: string }[] = [
+  { name: "conservative", description: "Guards its budget — won't spend on information, and bids under its own estimate." },
+  { name: "balanced", description: "Buys information when uncertain, then bids exactly what it believes." },
+  { name: "aggressive", description: "Buys information readily and bids above its estimate to win." },
+];
+
 export interface PublicProduct {
   productId: string;
   name: string;
   description: string;
+  imageUrl: string | null;
   baseValue: number;
+  minSellingAmount: number;
   publicAttributes: Record<string, string | number | boolean>;
   commitment: string;
+  streamUrl: string | null;
 }
 
 export interface PublicAgent {
@@ -77,14 +97,16 @@ export function getRoom(roomId: string): Promise<RoomView> {
 
 export interface EnterResult {
   sessionId: string;
+  roomId: string;
   address: string;
   agentId: string;
+  persona: PersonaName;
   enteredAt: number;
   entryTxId: string;
 }
 
-export function enterRoom(): Promise<EnterResult> {
-  return request<EnterResult>("/api/session/enter", { method: "POST" });
+export function enterRoom(roomId: string, persona: PersonaName): Promise<EnterResult> {
+  return request<EnterResult>("/api/session/enter", { method: "POST", body: JSON.stringify({ roomId, persona }) });
 }
 
 export interface AgentRunResult {
@@ -97,8 +119,8 @@ export interface AgentRunResult {
   bidTxId: string | null;
 }
 
-export function runAgent(): Promise<AgentRunResult> {
-  return request<AgentRunResult>("/api/session/agent/run", { method: "POST" });
+export function runAgent(roomId: string): Promise<AgentRunResult> {
+  return request<AgentRunResult>("/api/session/agent/run", { method: "POST", body: JSON.stringify({ roomId }) });
 }
 
 export interface RevealedBid {
@@ -120,4 +142,18 @@ export interface RevealView {
 
 export function getReveal(roomId: string): Promise<RevealView> {
   return request<RevealView>(`/api/room/${roomId}/reveal`);
+}
+
+export interface CreateListingResult {
+  roomId: string;
+  product: PublicProduct;
+}
+
+export interface CreateListingInput {
+  minPrice: number;
+  maxPrice: number;
+}
+
+export function createListing(input: CreateListingInput): Promise<CreateListingResult> {
+  return request<CreateListingResult>("/api/listings", { method: "POST", body: JSON.stringify(input) });
 }

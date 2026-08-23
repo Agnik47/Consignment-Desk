@@ -34,7 +34,24 @@ export interface DeployedRoomConfig {
   treasuryAddress: string;
   targetCents: number;
   targetNonce: string;
+  bidStakeMicroUsdc: bigint;
   explorerUrl: string;
+}
+
+// Algorand's ASA name field is protocol-capped at 32 bytes (contract.py's
+// bootstrap() sets it directly from this string as asset_name) — a real
+// Jetson-identified item name routinely exceeds that (e.g. "black track
+// jacket with white piping" is 37 bytes), which fails deep inside the
+// contract's inner AssetConfig transaction with an opaque "value is too
+// long" AVM error rather than a readable one. Trim by whole characters, not
+// bytes, so a multi-byte UTF-8 character never gets split into invalid
+// trailing bytes.
+function truncateAssetName(name: string, maxBytes = 32): string {
+  let result = name;
+  while (Buffer.byteLength(result, "utf-8") > maxBytes) {
+    result = result.slice(0, -1);
+  }
+  return result;
 }
 
 function commitment(cents: number, nonceHex: string): Uint8Array {
@@ -50,7 +67,7 @@ export async function deployRoom(opts: DeployRoomOptions = {}): Promise<Deployed
   const targetDollars = opts.targetDollars ?? Number(process.env.DEMO_TARGET ?? 29);
   const bidStake = opts.bidStakeMicroUsdc ?? 100_000n; // $0.10 — see docs/implementation-notes.md §13
   const feeBps = opts.feeBps ?? 500n; // 5%
-  const productName = opts.productName ?? "Sealed Vintage Polaroid SX-70";
+  const productName = truncateAssetName(opts.productName ?? "Sealed Vintage Polaroid SX-70");
 
   const algorand = AlgorandClient.testNet();
 
@@ -83,12 +100,16 @@ export async function deployRoom(opts: DeployRoomOptions = {}): Promise<Deployed
   // Computed, not guessed: base MBR (100k) + USDC opt-in (100k) + self-held
   // product ASA (100k) = 300k, plus box MBR for 2 bidders' BidRecord + index
   // boxes (~113k) and settle()'s inner-txn fees (~6k) = ~419k real need.
-  // 0.8 ALGO leaves ~90% margin — cheap insurance, since every underfunded
-  // attempt still creates the app on-chain and permanently raises the
-  // seller's own min-balance requirement even though the run fails (see
-  // docs/implementation-notes.md "seller min-balance creep").
+  // 0.42 ALGO is a slim margin over that — trimmed down from an earlier 0.8
+  // ALGO (90% margin) once testnet ALGO became the scarce resource across
+  // multiple listings. Do NOT cut this further: below ~419k, box creation for
+  // the second bidder can fail mid-demo, and PRD's E2E acceptance requires
+  // at least two agents participating. (The seller's OWN opt-in cost, a
+  // separate ~0.1 ALGO, is no longer paid here at all — see
+  // contract.ts's ensureSellerOptedIntoProduct, deferred to settle-time and
+  // only spent if the room genuinely gets zero revealed bids.)
   log("funding app account…");
-  await appClient.fundAppAccount({ amount: algo(0.8) });
+  await appClient.fundAppAccount({ amount: algo(0.42) });
 
   log("bootstrapping room…");
   const bootstrap = await appClient.send.call({
@@ -114,8 +135,12 @@ export async function deployRoom(opts: DeployRoomOptions = {}): Promise<Deployed
     log("opting treasury into USDC…");
     await algorand.send.assetOptIn({ sender: treasury, assetId: USDC_TESTNET_ASA_ID });
   }
-  log("opting seller into the product asset…");
-  await algorand.send.assetOptIn({ sender: seller, assetId: productAssetId });
+  // The seller does NOT opt into the product ASA here anymore — that opt-in
+  // is only needed for settle()'s no-revealed-bids fallback (item returned to
+  // seller), and costs 0.1 ALGO of permanent min-balance. Paying it for every
+  // listing regardless of outcome was wasted spend on a scarce testnet
+  // account; api/src/contract.ts's ensureSellerOptedIntoProduct() now does it
+  // lazily, only when a room genuinely settles with zero revealed bids.
 
   return {
     appId: createResult.appId,
@@ -124,6 +149,7 @@ export async function deployRoom(opts: DeployRoomOptions = {}): Promise<Deployed
     treasuryAddress: treasury.addr.toString(),
     targetCents,
     targetNonce,
+    bidStakeMicroUsdc: bidStake,
     explorerUrl: `https://lora.algokit.io/testnet/application/${createResult.appId}`,
   };
 }

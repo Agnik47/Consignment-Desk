@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@perawallet/connect": "~1.6.0",
+    "algosdk": "~3.7.0",
     "next": "16.3.2",
     "qrcode.react": "^4.2.0",
     "react": "19.2.8",

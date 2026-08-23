@@ -2,7 +2,6 @@ import { ExactAvmScheme } from "@x402/avm/exact/server";
 import { x402ResourceServer, HTTPFacilitatorClient } from "@x402/core/server";
 import type { RoutesConfig, RouteConfig } from "@x402/core/server";
 import { ALGORAND_TESTNET_GENESIS_HASH, USDC_TESTNET_ASA_ID } from "@x402/avm";
-import { ROOM_ID, PRODUCT_ID } from "./rooms.js";
 
 // The GoPlausible facilitator's live /supported response advertises Algorand
 // testnet under the FULL genesis-hash CAIP-2 form, not @x402/avm's exported
@@ -41,16 +40,24 @@ function usdcRoute(price: string, description: string): RouteConfig {
   };
 }
 
-export const ENTER_ROOM_PATH = `/api/room/${ROOM_ID}/enter`;
-export const HINT_PATH = `/api/product/${PRODUCT_ID}/hint`;
+// Route KEYS are patterns (@x402/core's parseRoutePattern compiles `:id` to
+// `[^/]+` — verified in node_modules/@x402/core/dist/cjs/server/index.js),
+// matching entry/hint requests for ANY room. Callers build the CONCRETE path
+// per call via the two helpers below — one room's payment must never be
+// accepted as settlement for a different room's gated resource.
+const ENTER_ROOM_PATH_PATTERN = "/api/room/:id/enter";
+const HINT_PATH_PATTERN = "/api/product/:id/hint";
+
+export const enterRoomPath = (roomId: string) => `/api/room/${roomId}/enter`;
+export const hintPath = (roomId: string) => `/api/product/${roomId}/hint`;
 
 /** Kept as a number too so the agent can compare it against its real budget. */
 export const HINT_PRICE_USD = 0.05;
 
 export const routes: RoutesConfig = {
   "/api/test-payment": usdcRoute("$0.01", "Phase 1 x402 smoke test — proves the facilitator settles a real testnet payment"),
-  [ENTER_ROOM_PATH]: usdcRoute("$0.50", "Room entry fee — assigns the paying session's agent"),
+  [ENTER_ROOM_PATH_PATTERN]: usdcRoute("$0.50", "Room entry fee — assigns the paying session's agent"),
   // P0-3, the requirement the PRD flags as never-cut: the agent pays for this
   // one itself, mid-decision, with no human in the path.
-  [HINT_PATH]: usdcRoute(`$${HINT_PRICE_USD.toFixed(2)}`, "One additional product attribute — purchased autonomously by an agent"),
+  [HINT_PATH_PATTERN]: usdcRoute(`$${HINT_PRICE_USD.toFixed(2)}`, "One additional product attribute — purchased autonomously by an agent"),
 };

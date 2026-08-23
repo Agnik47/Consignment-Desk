@@ -55,10 +55,14 @@ function explorer(txId: string) {
 class AgentClient {
   private cookie: string | undefined;
 
-  async post(path: string): Promise<{ status: number; body: any }> {
+  async post(path: string, body?: Record<string, unknown>): Promise<{ status: number; body: any }> {
     const res = await fetch(`${BASE_URL}${path}`, {
       method: "POST",
-      headers: this.cookie ? { cookie: this.cookie } : {},
+      headers: {
+        ...(this.cookie ? { cookie: this.cookie } : {}),
+        ...(body ? { "content-type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
     });
     const setCookie = res.headers.get("set-cookie");
     if (setCookie) this.cookie = setCookie.split(";")[0];
@@ -187,10 +191,15 @@ async function main() {
     });
 
     // --- [4/12] x402 room entry -----------------------------------------
+    // conservative declines the hint, balanced buys it — the same contrast
+    // the old agent-number-derived assignment produced, now picked explicitly
+    // since persona is a bidder choice (the UI's persona picker), not
+    // auto-assigned from arrival order.
+    const PERSONAS = ["conservative", "balanced"] as const;
     const entries = await step("x402 room entry", async () => {
       const results = [];
       for (let i = 0; i < agents.length; i++) {
-        const { status, body } = await agents[i].post("/api/session/enter");
+        const { status, body } = await agents[i].post("/api/session/enter", { roomId: "demo-room", persona: PERSONAS[i] });
         if (status !== 200) throw new Error(`entry for ${sessions[i].agentId} returned ${status}: ${JSON.stringify(body)}`);
         if (!body.entryTxId || body.entryTxId === "unknown") throw new Error("no real settlement tx id returned");
         results.push(body);
@@ -217,7 +226,7 @@ async function main() {
     // --- [7/12] Agent buys hint via x402 -----------------------------------
     const runs: any[] = [];
     const buyer = await step("Agent buys hint via x402", async () => {
-      const { status, body } = await agents[1].post("/api/session/agent/run"); // agent-2: balanced persona, buys
+      const { status, body } = await agents[1].post("/api/session/agent/run", { roomId: "demo-room" }); // agent-2: balanced persona, buys
       if (status !== 200) throw new Error(`agent run returned ${status}: ${JSON.stringify(body)}`);
       if (!body.hintPurchased) throw new Error(`${body.agentId} (persona=${body.persona}) did not buy a hint`);
       runs[1] = body;
@@ -226,7 +235,7 @@ async function main() {
 
     // --- [8/12] Second agent skips hint --------------------------------
     const skipper = await step("Second agent skips hint", async () => {
-      const { status, body } = await agents[0].post("/api/session/agent/run"); // agent-1: conservative, skips
+      const { status, body } = await agents[0].post("/api/session/agent/run", { roomId: "demo-room" }); // agent-1: conservative, skips
       if (status !== 200) throw new Error(`agent run returned ${status}: ${JSON.stringify(body)}`);
       if (body.hintPurchased) throw new Error(`${body.agentId} bought a hint — expected it to skip`);
       runs[0] = body;

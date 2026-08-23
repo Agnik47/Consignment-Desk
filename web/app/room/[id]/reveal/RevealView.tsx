@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ApiError, getReveal, getRoom, type PublicAgent, type RevealView as RevealData } from "@/lib/api";
+import { ApiError, getReveal, getRoom, usdToAlgo, type PublicAgent, type RevealView as RevealData } from "@/lib/api";
 
 const POLL_MS = 2000;
 
@@ -67,7 +67,7 @@ export default function RevealView({ roomId }: { roomId: string }) {
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 bg-zinc-950 px-6 py-12 text-zinc-50 sm:px-10">
       <header className="space-y-2 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-400">{reveal.productName}</p>
-        <h1 className="text-5xl font-bold tracking-tight">Target: ${reveal.target.toFixed(2)}</h1>
+        <h1 className="text-5xl font-bold tracking-tight">Target: {usdToAlgo(reveal.target).toFixed(4)} ALGO</h1>
         {reveal.winnerAgentId ? (
           <p className="text-xl text-emerald-300">
             🏆 <span className="font-semibold">{reveal.winnerAgentId}</span> wins
@@ -96,8 +96,8 @@ export default function RevealView({ roomId }: { roomId: string }) {
                   {agent && <p className="text-xs uppercase tracking-wide text-zinc-500">{agent.persona}</p>}
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-mono">${bid.guess.toFixed(2)}</p>
-                  <p className="text-xs text-zinc-500">distance ${bid.distance.toFixed(2)}</p>
+                  <p className="text-lg font-mono">{usdToAlgo(bid.guess).toFixed(4)} ALGO</p>
+                  <p className="text-xs text-zinc-500">distance {usdToAlgo(bid.distance).toFixed(4)} ALGO</p>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   {agent?.hintPurchased && agent.hintTxId && (
