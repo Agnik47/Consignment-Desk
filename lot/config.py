@@ -25,6 +25,8 @@ class Settings:
     warmup_frames: int
     jpeg_quality: int
     stream_port: int
+    api_port: int
+    api_key: str | None
     data_dir: Path
 
     @property
@@ -72,6 +74,7 @@ def load_settings(require_supabase: bool = True, require_groq: bool = True) -> S
         warmup_frames = int(os.getenv("LOT_WARMUP_FRAMES", "20"))
         jpeg_quality = int(os.getenv("LOT_JPEG_QUALITY", "92"))
         stream_port = int(os.getenv("LOT_STREAM_PORT", "8080"))
+        api_port = int(os.getenv("LOT_API_PORT", "8081"))
     except ValueError as exc:
         raise ConfigError(f"A numeric env var was set to a non-integer value: {exc}") from exc
 
@@ -88,5 +91,7 @@ def load_settings(require_supabase: bool = True, require_groq: bool = True) -> S
         warmup_frames=warmup_frames,
         jpeg_quality=jpeg_quality,
         stream_port=stream_port,
+        api_port=api_port,
+        api_key=os.getenv("LOT_API_KEY") or None,
         data_dir=Path(os.getenv("LOT_DATA_DIR", "./lot_data")),
     )
